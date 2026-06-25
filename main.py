@@ -84,16 +84,11 @@ HI_REPLIES = [
 ]
 
 BAD_WORDS = {
-    # Basic examples. Add/remove as you like.
     "bc", "mc", "bkl", "chutiya", "gandu", "madarchod", "behenchod"
 }
 
-# In-memory warning counts (resets on restart)
 user_warnings = {}
 
-# =========================
-# HELP TEXT
-# =========================
 HELP_TEXT = """
 🤖 *Funny Bot Commands*
 
@@ -111,16 +106,92 @@ HELP_TEXT = """
 */about* - About the bot
 
 💬 Normal chat:
-Say *hi*, *hello*, *hey* and I’ll reply 😄
+Say anything — I’ll try to reply smartly 😏
 """
 
 ABOUT_TEXT = """
 🤖 *Free Funny Bot*
-Your 24/7 fun partner for jokes, memes, roasts and chaos 😎
-
-Made with Python + Telegram Bot API
-Hosted online so it stays active ⚡
+24/7 fun + smart reply bot 😎
+Jokes, memes, roasts, truth/dare and AI-style chat vibes ⚡
 """
+
+# =========================
+# SMART REPLY LOGIC
+# =========================
+SMART_REPLIES = {
+    "sad": [
+        "Aaj mood off hai? Theek hai, aaj thoda slow chal — duniya kal bhi annoying rahegi 😌",
+        "Kya hua bhai? Thoda break le, paani pee aur mujhe bakchodi karne de 😤☕",
+        "Sad hours chal rahe hain? Main officially tera emotional support meme bot hoon 🫂😂",
+    ],
+    "study": [
+        "Padhai ka mood nahi aa raha? Classic. 25 min padh, 5 min break — warna guilt hi padh lega tujhe 😭",
+        "Exam aur tension ka rishta toxic hota hai bhai 😔📚",
+        "Padh le thoda, warna result wale din motivational quote bhi kaam nahi aayega 😭",
+    ],
+    "love": [
+        "Crush ka scene hai kya 👀 bol, analysis chalu karte hain.",
+        "Pyaar aur overthinking ka combo pack free me milta hai kya? 😭",
+        "Dil ka matter lag raha hai… bataun ignore kare ya confess? 😏",
+    ],
+    "sleep": [
+        "Sona chahiye tujhe. 3 baje wali life choices healthy nahi hoti 😭",
+        "Good night bolke online rehna bandh kar 😤",
+        "Sleep schedule dekh ke lag raha hai tu vampire internship pe hai 🧛",
+    ],
+    "motivation": [
+        "Tu kar lega bhai, bas overthinking ko bench pe bitha 😤🔥",
+        "Small steps bhi progress hote hain, bas start kar 😎",
+        "Motivation ka wait mat kar — kaam start kar, motivation khud auto-join karega 😏",
+    ],
+    "overthink": [
+        "Overthinking premium plan cancel kar bhai 😭",
+        "Har cheez ka 17-angle analysis zaroori nahi hota 😭",
+        "Dimaag ko thoda airplane mode pe daal, sab theek ho jayega 😌",
+    ],
+    "angry": [
+        "Gussa thoda side me park kar, warna tu aur situation dono roast ho jaoge 😭",
+        "Aaj kisne dimag kharab kiya? Naam de, list banate hain 😤",
+        "Deep breath + paani + thoda distance = certified survival combo 😌",
+    ],
+    "default": [
+        "Hmmm interesting 😏 aur bata",
+        "Ye line suspiciously random thi, but I respect it 😌",
+        "Main sun raha hoon bhai, continue 🍿",
+        "Achaaa 👀 phir kya hua?",
+        "Valid point, but thoda aur masala do 😎",
+        "Bhai tu conversation me plot twists daal raha hai 😭",
+    ]
+}
+
+def get_smart_reply(text: str) -> str:
+    t = text.lower()
+
+    if any(word in t for word in ["sad", "mood off", "depressed", "cry", "rona", "dukhi"]):
+        return random.choice(SMART_REPLIES["sad"])
+
+    if any(word in t for word in ["study", "exam", "padhai", "test", "homework", "school"]):
+        return random.choice(SMART_REPLIES["study"])
+
+    if any(word in t for word in ["love", "crush", "gf", "bf", "relationship", "pyaar"]):
+        return random.choice(SMART_REPLIES["love"])
+
+    if any(word in t for word in ["sleep", "soja", "good night", "night", "sleepy"]):
+        return random.choice(SMART_REPLIES["sleep"])
+
+    if any(word in t for word in ["motivate", "motivation", "lazy", "kaam nahi ho raha", "procrastination"]):
+        return random.choice(SMART_REPLIES["motivation"])
+
+    if any(word in t for word in ["overthink", "tension", "stress", "anxiety", "dar lag raha"]):
+        return random.choice(SMART_REPLIES["overthink"])
+
+    if any(word in t for word in ["angry", "gussa", "irritated", "frustrated"]):
+        return random.choice(SMART_REPLIES["angry"])
+
+    if any(word in t for word in ["hi", "hello", "hey", "yo", "hii"]):
+        return random.choice(HI_REPLIES)
+
+    return random.choice(SMART_REPLIES["default"])
 
 # =========================
 # COMMAND HANDLERS
@@ -209,42 +280,41 @@ async def rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================
-# GROUP / CHAT MODERATION
+# TEXT / MODERATION / SMART REPLY
 # =========================
 def contains_bad_word(text: str) -> bool:
     lowered = text.lower()
     return any(word in lowered for word in BAD_WORDS)
 
-async def moderate_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles normal text: hi/hello replies + bad word warnings."""
+async def smart_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
-    text = update.message.text.strip().lower()
+    text = update.message.text.strip()
     user = update.effective_user
 
-    # Basic moderation
+    # moderation first
     if contains_bad_word(text):
         user_id = user.id
         user_warnings[user_id] = user_warnings.get(user_id, 0) + 1
         count = user_warnings[user_id]
 
-        await update.message.reply_text(
-            f"⚠️ {user.first_name}, thoda language control 😅\nWarning: {count}/3"
-        )
-
-        # Optional: after 3 warnings, send stronger message
-        if count >= 3:
+        if count < 3:
             await update.message.reply_text(
-                f"🚫 {user.first_name}, next time thoda tameez se 😤"
+                f"⚠️ {user.first_name}, thoda language control 😅\nWarning: {count}/3"
             )
+        else:
+            savage = random.choice([
+                "Bhai gaali quota over ho gaya 😭 thoda shaanti",
+                "Aaram se champion 😭 keyboard todne ki zarurat nahi",
+                "Language ko thoda family pack bana de 😌"
+            ])
+            await update.message.reply_text(savage)
         return
 
-    # Friendly replies
-    greetings = {"hi", "hello", "hey", "yo", "hii", "heyy"}
-    if text in greetings:
-        await update.message.reply_text(random.choice(HI_REPLIES))
-        return
+    # smart reply
+    reply = get_smart_reply(text)
+    await update.message.reply_text(reply)
 
 # =========================
 # NEW MEMBER WELCOME
@@ -287,8 +357,8 @@ def main():
     # Group welcome
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_members))
 
-    # Text / moderation / hi-hello
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, moderate_message))
+    # Smart chat replies
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, smart_chat))
 
     # Error logging
     app.add_error_handler(error_handler)
