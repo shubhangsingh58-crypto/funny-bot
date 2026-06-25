@@ -13,7 +13,7 @@ from telegram.ext import (
 # =========================
 # CONFIG
 # =========================
-TOKEN ="8851707170:AAEeG4HQQG-QqROP1xn87gh5w5ZTC435PWs"
+TOKEN = os.getenv("8851707170:AAEeG4HQQG-QqROP1xn87gh5w5ZTC435PWs")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 if not TOKEN:
