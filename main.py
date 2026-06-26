@@ -38,7 +38,7 @@ logging.basicConfig(
 # DATABASE SETUP
 # =========================
 def get_db_connection():
-    return sqlite3.connect("baklol.db", check_same_thread=False)
+    return sqlite3.connect("baklol_v2.db", check_same_thread=False)
 
 conn = get_db_connection()
 cursor = conn.cursor()
