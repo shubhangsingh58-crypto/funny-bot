@@ -268,7 +268,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def handle_sticker_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_sticker_id = update.message.sticker.file_id
+    sticker_id = "CAACAgUAAxkBAAIBRGo-GzLTj9wFXMZF-20UX3Ytm7fLAAKoAgACzLl4VyWlFKj2CySHPAQ"
+    await update.message.reply_sticker(sticker=sticker_id)
     await update.message.reply_text(f"Aapke sticker ki ID hai:\n`{user_sticker_id}`", parse_mode="Markdown")
 
 async def handle_gif_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
