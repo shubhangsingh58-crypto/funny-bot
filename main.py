@@ -391,8 +391,7 @@ async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Ya toh 'truth' chunno ya 'dare'.. ye teesra dimag mat lagao! 🤦‍♂️")
         async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user_id = update.effective_user.id
+            user_id = update.effective_user.id
 
     cursor.execute(
         "SELECT invite_code, referrals FROM users WHERE user_id=?",
