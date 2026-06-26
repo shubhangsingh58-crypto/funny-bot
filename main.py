@@ -390,6 +390,7 @@ async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Invite command reached ✅")
     user_id = update.effective_user.id
 
     cursor.execute(
