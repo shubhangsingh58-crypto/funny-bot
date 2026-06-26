@@ -267,13 +267,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text)
 
-async def handle_sticker_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sticker_id = "CAACAgUAAxkBAAIBRGo-GzLTj9wFXMZF-20UX3Ytm7fLAAKoAgACzLl4VyWlFKj2CySHPAQ"
-    await update.message.reply_sticker(sticker=sticker_id)
-    await update.message.reply_text(f"Aapke sticker ki ID hai:\n`{user_sticker_id}`", parse_mode="Markdown")
 
-async def handle_gif_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Kya gajab GIF bheja hai! 😂🔥")
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT)
 
@@ -395,8 +391,7 @@ def main():
     app.add_handler(CommandHandler("mode", mode_command))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker_reply))
-    app.add_handler(MessageHandler(filters.ANIMATION, handle_gif_reply))
+    
 
     app.add_error_handler(error_handler)
 
