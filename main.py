@@ -267,7 +267,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text)
 
+async def handle_sticker_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Mast sticker hai bhai! 😎")
 
+async def handle_gif_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Kya gajab GIF bheja hai! 😂🔥")
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT)
 
@@ -395,3 +399,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker_reply))
+    app.add_handler(MessageHandler(filters.ANIMATION, handle_gif_reply))
