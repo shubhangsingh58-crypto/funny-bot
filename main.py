@@ -5,7 +5,8 @@ import time
 import random
 import re
 from collections import defaultdict, deque
-
+import sqlite3
+import string
 from telegram import Update
 from telegram.constants import ChatAction, ChatType
 from telegram.ext import (
@@ -32,7 +33,52 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
+# =========================
+# DATABASE
+# =========================
 
+conn = sqlite3.connect("baklol.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    username TEXT,
+    invite_code TEXT UNIQUE,
+    invited_by TEXT,
+    referrals INTEGER DEFAULT 0,
+    badge TEXT DEFAULT 'Newbie',
+    premium INTEGER DEFAULT 0,
+    daily_messages INTEGER DEFAULT 50,
+    xp INTEGER DEFAULT 0,
+    level INTEGER DEFAULT 1
+)
+""")
+
+conn.commit()
+
+
+def generate_invite_code():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+
+def register_user(user):
+    cursor.execute("SELECT * FROM users WHERE user_id=?", (user.id,))
+    if cursor.fetchone():
+        return
+
+    invite_code = generate_invite_code()
+
+    cursor.execute("""
+        INSERT INTO users (user_id, username, invite_code)
+        VALUES (?, ?, ?)
+    """, (
+        user.id,
+        user.username,
+        invite_code
+    ))
+
+    conn.commit()
 # =========================
 # MEMORY / STATE
 # =========================
@@ -236,6 +282,7 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
 # COMMANDS
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    register_user(update.effective_user)
     text = (
         "Yo! 😎 Main koi bot nahi, ek seedha saadha ladka hoon.\n"
         "Savage bakchodi, roast ya game khelna ho toh batao. Seedha baatein shuru karo ya /help dekh lo!"
