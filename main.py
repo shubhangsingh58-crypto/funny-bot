@@ -62,7 +62,7 @@ def generate_invite_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 
-def register_user(user):
+def register_user(user, context=None):
     cursor.execute("SELECT * FROM users WHERE user_id=?", (user.id,))
     if cursor.fetchone():
         return
@@ -77,16 +77,19 @@ def register_user(user):
         user.username,
         invite_code
     ))
-
     conn.commit()
-    def add_referral(invite_code, new_user_id):
-        cursor.execute(
+
+    if context and context.args:
+        add_referral(context.args[0], user.id)
+
+
+def add_referral(invite_code, new_user_id):
+    cursor.execute(
         "SELECT user_id FROM users WHERE invite_code=?",
         (invite_code,)
     )
 
     inviter = cursor.fetchone()
-
     if not inviter:
         return
 
@@ -100,13 +103,8 @@ def register_user(user):
         "SELECT invited_by FROM users WHERE user_id=?",
         (new_user_id,)
     )
-
     row = cursor.fetchone()
-
-    if not row:
-        return
-
-    if row[0]:
+    if row and row[0]:
         return
 
     cursor.execute(
@@ -118,8 +116,8 @@ def register_user(user):
         "UPDATE users SET referrals = referrals + 1 WHERE user_id=?",
         (inviter_id,)
     )
-
     conn.commit()
+
 # =========================
 # MEMORY / STATE
 # =========================
@@ -172,6 +170,7 @@ HELP_TEXT = """
 /mode flirty - thoda maze lene ke liye 😉
 /game truth - Sach bolna padega beta 🤔
 /game dare - Himmat hai toh task poora kar 🔥
+/invite - dosto ko bulao aur rewards jeeto 👥
 /reset - purani baatein bhool jao (clear memory)
 """
 
@@ -323,9 +322,7 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
 # COMMANDS
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    register_user(update.effective_user)
-    if context.args:
-        add_referral(context.args[0], update.effective_user.id)
+    register_user(update.effective_user, context)
     text = (
         "Yo! 😎 Main koi bot nahi, ek seedha saadha ladka hoon.\n"
         "Savage bakchodi, roast ya game khelna ho toh batao. Seedha baatein shuru karo ya /help dekh lo!"
@@ -390,8 +387,10 @@ async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Dum hai toh poora kar ke dikha! 🔥\n\n*Task:* {task}", parse_mode="Markdown")
     else:
         await update.message.reply_text("Ya toh 'truth' chunno ya 'dare'.. ye teesra dimag mat lagao! 🤦‍♂️")
-        async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
-            user_id = update.effective_user.id
+
+
+async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
 
     cursor.execute(
         "SELECT invite_code, referrals FROM users WHERE user_id=?",
@@ -413,11 +412,8 @@ async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (
         "👥 *Invite Friends & Earn Rewards*\n\n"
-
         f"🔗 {invite_link}\n\n"
-
         f"👥 Referrals: {referrals}/5\n\n"
-
         "🎁 *Unlock at 5 referrals*\n"
         "🔥 Premium Roast\n"
         "⚡100 Daily Messages\n"
