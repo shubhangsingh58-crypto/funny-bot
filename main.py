@@ -390,6 +390,42 @@ async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Dum hai toh poora kar ke dikha! 🔥\n\n*Task:* {task}", parse_mode="Markdown")
     else:
         await update.message.reply_text("Ya toh 'truth' chunno ya 'dare'.. ye teesra dimag mat lagao! 🤦‍♂️")
+        async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    user_id = update.effective_user.id
+
+    cursor.execute(
+        "SELECT invite_code, referrals FROM users WHERE user_id=?",
+        (user_id,)
+    )
+
+    row = cursor.fetchone()
+
+    if not row:
+        await update.message.reply_text("Pehle /start karo 😎")
+        return
+
+    invite_code = row[0]
+    referrals = row[1]
+
+    bot_username = (await context.bot.get_me()).username
+
+    invite_link = f"https://t.me/{bot_username}?start={invite_code}"
+
+    text = (
+        "👥 *Invite Friends & Earn Rewards*\n\n"
+
+        f"🔗 {invite_link}\n\n"
+
+        f"👥 Referrals: {referrals}/5\n\n"
+
+        "🎁 *Unlock at 5 referrals*\n"
+        "🔥 Premium Roast\n"
+        "⚡100 Daily Messages\n"
+        "😎 Baklol Badge"
+    )
+
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 
 # =========================
@@ -460,6 +496,7 @@ def main():
     app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(CommandHandler("mode", mode_command))
     app.add_handler(CommandHandler("game", truth_or_dare))
+    app.add_handler(CommandHandler("invite", invite))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
 
