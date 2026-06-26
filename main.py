@@ -390,6 +390,11 @@ def main():
     app.add_handler(CommandHandler("mode", mode_command))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
+    app.add_handler(CommandHandler("mode", mode_command))
+    
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
+    app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker_reply))
+    app.add_handler(MessageHandler(filters.ANIMATION, handle_gif_reply))
 
     app.add_error_handler(error_handler)
 
@@ -399,5 +404,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker_reply))
-    app.add_handler(MessageHandler(filters.ANIMATION, handle_gif_reply))
+
