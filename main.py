@@ -33,13 +33,15 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
-# =========================
-# DATABASE
-# =========================
 
-conn = sqlite3.connect("baklol.db", check_same_thread=False)
+# =========================
+# DATABASE SETUP
+# =========================
+def get_db_connection():
+    return sqlite3.connect("baklol.db", check_same_thread=False)
+
+conn = get_db_connection()
 cursor = conn.cursor()
-
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
@@ -56,63 +58,72 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
+try:
+    cursor.execute("ALTER TABLE users ADD COLUMN referrals INTEGER DEFAULT 0")
+    conn.commit()
+except sqlite3.OperationalError:
+    pass
+
+try:
+    cursor.execute("ALTER TABLE users ADD COLUMN invite_code TEXT")
+    conn.commit()
+except sqlite3.OperationalError:
+    pass
+
+conn.close()
+
 
 def generate_invite_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 
 def register_user(user, context=None):
-    cursor.execute("SELECT * FROM users WHERE user_id=?", (user.id,))
-    if cursor.fetchone():
-        return
+    db = get_db_connection()
+    cursor = db.cursor()
+    try:
+        cursor.execute("SELECT invite_code FROM users WHERE user_id=?", (user.id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            invite_code = generate_invite_code()
+            cursor.execute("""
+                INSERT INTO users (user_id, username, invite_code, referrals)
+                VALUES (?, ?, ?, 0)
+            """, (user.id, user.username, invite_code))
+            db.commit()
+        elif not row[0]:
+            invite_code = generate_invite_code()
+            cursor.execute("UPDATE users SET invite_code=? WHERE user_id=?", (invite_code, user.id))
+            db.commit()
 
-    invite_code = generate_invite_code()
-
-    cursor.execute("""
-        INSERT INTO users (user_id, username, invite_code)
-        VALUES (?, ?, ?)
-    """, (
-        user.id,
-        user.username,
-        invite_code
-    ))
-    conn.commit()
-
-    if context and context.args:
-        add_referral(context.args[0], user.id)
+        if context and context.args:
+            add_referral_direct(db, context.args[0], user.id)
+    except Exception as e:
+        logging.error(f"Registration error: {e}")
+    finally:
+        db.close()
 
 
-def add_referral(invite_code, new_user_id):
-    cursor.execute(
-        "SELECT user_id FROM users WHERE invite_code=?",
-        (invite_code,)
-    )
+def add_referral_direct(db, invite_code, new_user_id):
+    cursor = db.cursor()
+    cursor.execute("SELECT user_id FROM users WHERE invite_code=?", (invite_code,))
     inviter = cursor.fetchone()
     if not inviter:
         return
 
     inviter_id = inviter[0]
-
     if inviter_id == new_user_id:
         return
 
-    cursor.execute(
-        "SELECT invited_by FROM users WHERE user_id=?",
-        (new_user_id,)
-    )
+    cursor.execute("SELECT invited_by FROM users WHERE user_id=?", (new_user_id,))
     row = cursor.fetchone()
     if row and row[0]:
         return
 
-    cursor.execute(
-        "UPDATE users SET invited_by=? WHERE user_id=?",
-        (invite_code, new_user_id)
-    )
-    cursor.execute(
-        "UPDATE users SET referrals = referrals + 1 WHERE user_id=?",
-        (inviter_id,)
-    )
-    conn.commit()
+    cursor.execute("UPDATE users SET invited_by=? WHERE user_id=?", (invite_code, new_user_id))
+    cursor.execute("UPDATE users SET referrals = COALESCE(referrals, 0) + 1 WHERE user_id=?", (inviter_id,))
+    db.commit()
+
 
 # =========================
 # MEMORY / STATE
@@ -123,6 +134,7 @@ last_message_time = {}
 
 BOT_NAME_HINTS = ["funny bot", "funnybot"]
 
+    
 # =========================
 # TRUTH & DARE QUESTIONS
 # =========================
