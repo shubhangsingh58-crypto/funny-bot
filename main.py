@@ -79,6 +79,47 @@ def register_user(user):
     ))
 
     conn.commit()
+    def add_referral(invite_code, new_user_id):
+    cursor.execute(
+        "SELECT user_id FROM users WHERE invite_code=?",
+        (invite_code,)
+    )
+
+    inviter = cursor.fetchone()
+
+    if not inviter:
+        return
+
+    inviter_id = inviter[0]
+
+    # Self referral block
+    if inviter_id == new_user_id:
+        return
+
+    cursor.execute(
+        "SELECT invited_by FROM users WHERE user_id=?",
+        (new_user_id,)
+    )
+
+    row = cursor.fetchone()
+
+    if not row:
+        return
+
+    if row[0]:
+        return
+
+    cursor.execute(
+        "UPDATE users SET invited_by=? WHERE user_id=?",
+        (invite_code, new_user_id)
+    )
+
+    cursor.execute(
+        "UPDATE users SET referrals = referrals + 1 WHERE user_id=?",
+        (inviter_id,)
+    )
+
+    conn.commit()
 # =========================
 # MEMORY / STATE
 # =========================
@@ -283,6 +324,8 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update.effective_user)
+    if context.args:
+    add_referral(context.args[0], update.effective_user.id)
     text = (
         "Yo! 😎 Main koi bot nahi, ek seedha saadha ladka hoon.\n"
         "Savage bakchodi, roast ya game khelna ho toh batao. Seedha baatein shuru karo ya /help dekh lo!"
