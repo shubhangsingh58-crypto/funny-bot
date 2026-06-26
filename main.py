@@ -80,7 +80,7 @@ def register_user(user):
 
     conn.commit()
     def add_referral(invite_code, new_user_id):
-    cursor.execute(
+        cursor.execute(
         "SELECT user_id FROM users WHERE invite_code=?",
         (invite_code,)
     )
