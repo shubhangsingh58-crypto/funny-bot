@@ -325,7 +325,7 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update.effective_user)
     if context.args:
-    add_referral(context.args[0], update.effective_user.id)
+        add_referral(context.args[0], update.effective_user.id)
     text = (
         "Yo! 😎 Main koi bot nahi, ek seedha saadha ladka hoon.\n"
         "Savage bakchodi, roast ya game khelna ho toh batao. Seedha baatein shuru karo ya /help dekh lo!"
