@@ -54,7 +54,6 @@ CREATE TABLE IF NOT EXISTS users (
     level INTEGER DEFAULT 1
 )
 """)
-
 conn.commit()
 
 
@@ -88,14 +87,12 @@ def add_referral(invite_code, new_user_id):
         "SELECT user_id FROM users WHERE invite_code=?",
         (invite_code,)
     )
-
     inviter = cursor.fetchone()
     if not inviter:
         return
 
     inviter_id = inviter[0]
 
-    # Self referral block
     if inviter_id == new_user_id:
         return
 
@@ -111,7 +108,6 @@ def add_referral(invite_code, new_user_id):
         "UPDATE users SET invited_by=? WHERE user_id=?",
         (invite_code, new_user_id)
     )
-
     cursor.execute(
         "UPDATE users SET referrals = referrals + 1 WHERE user_id=?",
         (inviter_id,)
@@ -388,38 +384,49 @@ async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Ya toh 'truth' chunno ya 'dare'.. ye teesra dimag mat lagao! 🤦‍♂️")
 
+
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    try:
+        user_id = update.effective_user.id
+        cursor.execute(
+            "SELECT invite_code, referrals FROM users WHERE user_id=?",
+            (user_id,)
+        )
+        row = cursor.fetchone()
 
-    cursor.execute(
-        "SELECT invite_code, referrals FROM users WHERE user_id=?",
-        (user_id,)
-    )
+        if not row:
+            # Agar database me user nahi hai toh pehle force register karo
+            register_user(update.effective_user, context)
+            cursor.execute(
+                "SELECT invite_code, referrals FROM users WHERE user_id=?",
+                (user_id,)
+            )
+            row = cursor.fetchone()
 
-    row = cursor.fetchone()
+        invite_code = row[0]
+        referrals = row[1]
 
-    if not row:
-        await update.message.reply_text("Pehle /start karo 😎")
-        return
+        try:
+            bot_username = (await context.bot.get_me()).username
+        except Exception:
+            bot_username = context.bot.username or "YourBotUsername"
 
-    invite_code = row[0]
-    referrals = row[1]
+        invite_link = f"https://t.me/{bot_username}?start={invite_code}"
 
-    bot_username = (await context.bot.get_me()).username
+        text = (
+            "👥 *Invite Friends & Earn Rewards*\n\n"
+            f"🔗 {invite_link}\n\n"
+            f"👥 Referrals: {referrals}/5\n\n"
+            "🎁 *Unlock at 5 referrals*\n"
+            "🔥 Premium Roast\n"
+            "⚡ 100 Daily Messages\n"
+            "😎 Baklol Badge"
+        )
+        await update.message.reply_text(text, parse_mode="Markdown")
 
-    invite_link = f"https://t.me/{bot_username}?start={invite_code}"
-
-    text = (
-        "👥 *Invite Friends & Earn Rewards*\n\n"
-        f"🔗 {invite_link}\n\n"
-        f"👥 Referrals: {referrals}/5\n\n"
-        "🎁 *Unlock at 5 referrals*\n"
-        "🔥 Premium Roast\n"
-        "⚡100 Daily Messages\n"
-        "😎 Baklol Badge"
-    )
-
-    await update.message.reply_text(text, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Error in invite command: {e}")
+        await update.message.reply_text("Kuch toh gadbad hui hai dimaag me, thodi der baad try kar! 😭")
 
 
 # =========================
