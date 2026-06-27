@@ -7,7 +7,6 @@ import re
 from collections import defaultdict, deque
 import sqlite3
 import string
-import secrets
 from telegram import Update
 from telegram.constants import ChatAction, ChatType
 from telegram.ext import (
@@ -81,24 +80,21 @@ def generate_invite_code():
 def add_xp(user_id, amount=5):
     db = get_db_connection()
     cursor = db.cursor()
-    try:
-        cursor.execute("SELECT xp FROM users WHERE user_id=?", (user_id,))
-        row = cursor.fetchone()
-        if not row:
-            return
-
-        xp = (row[0] or 0) + amount
-        level = (xp // 100) + 1
-
-        cursor.execute(
-            "UPDATE users SET xp=?, level=? WHERE user_id=?",
-            (xp, level, user_id)
-        )
-        db.commit()
-    except Exception as e:
-        logging.error(f"Error in add_xp: {e}")
-    finally:
+    cursor.execute("SELECT xp FROM users WHERE user_id=?", (user_id,))
+    row = cursor.fetchone()
+    if not row:
         db.close()
+        return
+
+    xp = (row[0] or 0) + amount
+    level = (xp // 100) + 1
+
+    cursor.execute(
+        "UPDATE users SET xp=?, level=? WHERE user_id=?",
+        (xp, level, user_id)
+    )
+    db.commit()
+    db.close()
 
 
 def add_referral_direct(db, invite_code, new_user_id):
@@ -132,8 +128,8 @@ def register_user(user, context=None):
         if not row:
             invite_code = generate_invite_code()
             cursor.execute("""
-                INSERT INTO users (user_id, username, invite_code, referrals, xp, level)
-                VALUES (?, ?, ?, 0, 0, 1)
+                INSERT INTO users (user_id, username, invite_code, referrals)
+                VALUES (?, ?, ?, 0)
             """, (user.id, user.username, invite_code))
             db.commit()
         elif not row[0]:
@@ -425,76 +421,70 @@ async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = get_db_connection()
     cursor = db.cursor()
-    try:
-        user_id = update.effective_user.id
 
+    user_id = update.effective_user.id
+
+    cursor.execute(
+        "SELECT invite_code, referrals FROM users WHERE user_id=?",
+        (user_id,)
+    )
+
+    row = cursor.fetchone()
+
+    if row is None:
+        register_user(update.effective_user)
         cursor.execute(
             "SELECT invite_code, referrals FROM users WHERE user_id=?",
             (user_id,)
         )
         row = cursor.fetchone()
 
-        if row is None:
-            db.close()
-            register_user(update.effective_user)
-            db = get_db_connection()
-            cursor = db.cursor()
-            cursor.execute(
-                "SELECT invite_code, referrals FROM users WHERE user_id=?",
-                (user_id,)
-            )
-            row = cursor.fetchone()
+    invite_code = row[0]
+    referrals = row[1] if row[1] is not None else 0
 
-        invite_code = row[0] if (row and row[0]) else generate_invite_code()
-        referrals = row[1] if (row and row[1]) else 0
+    try:
+        bot_username = (await context.bot.get_me()).username
+    except Exception:
+        bot_username = context.bot.username or "YourBotUsername"
 
-        if row and not row[0]:
-            cursor.execute("UPDATE users SET invite_code=? WHERE user_id=?", (invite_code, user_id))
-            db.commit()
+    invite_link = f"https://t.me/{bot_username}?start={invite_code}"
 
-        try:
-            bot_username = (await context.bot.get_me()).username
-        except Exception:
-            bot_username = context.bot.username or "YourBotUsername"
+    db.close()
 
-        invite_link = f"https://t.me/{bot_username}?start={invite_code}"
-
-        text = (
-            "👥 *Invite Friends & Earn Rewards*\n\n"
-            f"🔗 {invite_link}\n\n"
-            f"👥 Referrals: {referrals}/5\n\n"
-            "🎁 *Rewards:*\n"
-            "🔥 Premium Roast\n"
-            "⚡ 100 Daily Messages\n"
-            "😎 Baklol Badge"
-        )
-        await update.message.reply_text(text, parse_mode="Markdown")
-    
-    finally:
-        db.close()
+    await update.message.reply_text(
+        f"👥 Invite Friends & Earn Rewards\n\n"
+        f"🔗 {invite_link}\n\n"
+        f"👥 Referrals: {referrals}/5\n\n"
+        f"🎁 Rewards:\n"
+        f"🔥 Premium Roast\n"
+        f"⚡ 100 Daily Messages\n"
+        f"😎 Baklol Badge"
+    )
 
     
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = get_db_connection()
     cursor = db.cursor()
-    try:
-        user_id = update.effective_user.id
 
-        cursor.execute("""
-            SELECT username, referrals, badge, premium, xp, level
-            FROM users
-            WHERE user_id=?
-        """, (user_id,))
+    user_id = update.effective_user.id
 
-        row = cursor.fetchone()
-        if not row:
-            await update.message.reply_text("Pehle /start kar bhai 😎")
-            return
+    cursor.execute("""
+        SELECT username, referrals, badge, premium, xp, level
+        FROM users
+        WHERE user_id=?
+    """, (user_id,))
 
-        username, referrals, badge, premium, xp, level = row
-        premium_text = "✅ Yes" if premium else "❌ No"
+    row = cursor.fetchone()
+    db.close()
 
-        text = f"""
+    if not row:
+        await update.message.reply_text("Pehle /start kar bhai 😎")
+        return
+
+    username, referrals, badge, premium, xp, level = row
+    premium_text = "✅ Yes" if premium else "❌ No"
+
+    text = f"""
 👤 @{username or 'User'}
 
 🏅 Badge : {badge}
@@ -506,11 +496,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 💎 Premium : {premium_text}
 """
-        await update.message.reply_text(text)
-    except Exception as e:
-        logging.error(f"Error in profile command: {e}")
-    finally:
-        db.close()
+    await update.message.reply_text(text)
 
 
 # =========================
@@ -555,8 +541,6 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.chat.send_action(action=ChatAction.TYPING)
-    
-    # Global add_xp function perfectly called here
     add_xp(user_id)
 
     reply = get_ai_reply(user_id, raw_text)
