@@ -51,11 +51,11 @@ def init_db():
         invited_by TEXT,
         referrals INTEGER DEFAULT 0,
         badge TEXT DEFAULT 'Newbie',
-premium INTEGER DEFAULT 0,
-daily_messages INTEGER DEFAULT 50,
-coins INTEGER DEFAULT 100,
-xp INTEGER DEFAULT 0,
-level INTEGER DEFAULT 1
+        premium INTEGER DEFAULT 0,
+        daily_messages INTEGER DEFAULT 50,
+        coins INTEGER DEFAULT 100,
+        xp INTEGER DEFAULT 0,
+        level INTEGER DEFAULT 1
     )
     """)
     conn.commit()
@@ -66,11 +66,12 @@ level INTEGER DEFAULT 1
         conn.commit()
     except sqlite3.OperationalError:
         pass
-        try:
-    cursor.execute("ALTER TABLE users ADD COLUMN coins INTEGER DEFAULT 100")
-    conn.commit()
-except sqlite3.OperationalError:
-    pass
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN coins INTEGER DEFAULT 100")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
 
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN invite_code TEXT")
@@ -89,7 +90,7 @@ def generate_invite_code():
 def add_xp(user_id, amount=5):
     db = get_db_connection()
     cursor = db.cursor()
-    cursor.execute("SELECT xp FROM users WHERE user_id=?", (user_id,))
+    cursor.execute("SELECT xp, coins FROM users WHERE user_id=?", (user_id,))
     row = cursor.fetchone()
     if not row:
         db.close()
@@ -97,15 +98,11 @@ def add_xp(user_id, amount=5):
 
     xp = (row[0] or 0) + amount
     level = (xp // 100) + 1
-    cursor.execute(
-    "UPDATE users SET coins = coins + 2 WHERE user_id=?",
-    (user_id,)
-)
 
+    # Updates both XP, Level, and adds +2 Coins cleanly
     cursor.execute(
-    "UPDATE users SET xp=?, level=?, coins=coins+2 WHERE user_id=?",
-    (xp, level, user_id)
-)
+        "UPDATE users SET xp=?, level=?, coins = COALESCE(coins, 100) + 2 WHERE user_id=?",
+        (xp, level, user_id)
     )
     db.commit()
     db.close()
@@ -142,8 +139,8 @@ def register_user(user, context=None):
         if not row:
             invite_code = generate_invite_code()
             cursor.execute("""
-                INSERT INTO users (user_id, username, invite_code, referrals)
-                VALUES (?, ?, ?, 0)
+                INSERT INTO users (user_id, username, invite_code, referrals, coins)
+                VALUES (?, ?, ?, 0, 100)
             """, (user.id, user.username, invite_code))
             db.commit()
         elif not row[0]:
@@ -484,20 +481,19 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     cursor.execute("""
-    SELECT username, referrals, badge, premium, xp, level, coins
-    FROM users
-    WHERE user_id=?
-""", (user_id,))
+        SELECT username, referrals, badge, premium, xp, level, coins
+        FROM users
+        WHERE user_id=?
+    """, (user_id,))
 
-row = cursor.fetchone()
+    row = cursor.fetchone()
 
-db.close()
+    if not row:
+        await update.message.reply_text("Pehle /start kar bhai 😎")
+        db.close()
+        return
 
-if not row:
-    await update.message.reply_text("Pehle /start kar bhai 😎")
-    return
-
-username, referrals, badge, premium, xp, level, coins = row
+    username, referrals, badge, premium, xp, level, coins = row
     
     # Auto Upgrade System for Baklol Badge
     if referrals >= 5 and badge == 'Newbie':
@@ -514,7 +510,7 @@ username, referrals, badge, premium, xp, level, coins = row
 🏅 <b>Badge :</b> {badge}\n
 ⭐ <b>Level :</b> {level}
 ✨ <b>XP :</b> {xp}
-💰 <b>Coins :</b> {coins}\n
+💰 <b>Coins :</b> {coins if coins is not None else 100}\n
 👥 <b>Referrals :</b> {referrals}/5\n
 💎 <b>Premium :</b> {premium_text}"""
 
@@ -603,8 +599,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
-
-
-
         
