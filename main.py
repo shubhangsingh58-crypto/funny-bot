@@ -452,6 +452,10 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Error in invite command: {e}")
         await update.message.reply_text("Kuch toh gadbad hui hai dimaag me, thodi der baad try kar! 😭")
 
+    except Exception as e:
+        logging.error(f"Error in invite command: {e}")
+        await update.message.reply_text("Kuch toh gadbad hui hai dimaag me, thodi der baad try kar! 😭")
+
 
     except Exception as e:
         logging.error(f"Error in invite command: {e}")
