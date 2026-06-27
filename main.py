@@ -7,6 +7,7 @@ import re
 from collections import defaultdict, deque
 import sqlite3
 import string
+import secrets
 from telegram import Update
 from telegram.constants import ChatAction, ChatType
 from telegram.ext import (
@@ -43,8 +44,7 @@ def get_db_connection():
 conn = get_db_connection()
 cursor = conn.cursor()
 cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS users (\n    user_id INTEGER PRIMARY KEY,
     username TEXT,
     invite_code TEXT UNIQUE,
     invited_by TEXT,
@@ -395,13 +395,14 @@ async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Dum hai toh poora kar ke dikha! 🔥\n\n*Task:* {task}", parse_mode="Markdown")
     else:
         await update.message.reply_text("Ya toh 'truth' chunno ya 'dare'.. ye teesra dimag mat lagao! 🤦‍♂️")
+
+
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
         
-        # Tumhare code ke mutabik direct sqlite3 se connect karna hai
-        import sqlite3
-        db = sqlite3.connect('funny_bot.db')
+        # Ab sahi wale database se connection open hoga
+        db = get_db_connection()
         cursor_db = db.cursor()
         
         cursor_db.execute(
@@ -414,7 +415,7 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.close()
             register_user(update.effective_user, context)
             
-            db = sqlite3.connect('funny_bot.db')
+            db = get_db_connection()
             cursor_db = db.cursor()
             cursor_db.execute(
                 "SELECT invite_code, referrals FROM users WHERE user_id=?",
@@ -422,8 +423,17 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             row = cursor_db.fetchone()
 
-        invite_code = row[0] if (row and row[0]) else generate_invite_code()
+        # Agar row nahi hai ya code galti se khali hai toh naya random token generate hoga
+        invite_code = row[0] if (row and row[0]) else secrets.token_hex(4)
         referrals = row[1] if (row and row[1]) else 0
+
+        # Agar user tha par code nahi bana tha toh update kar dete hain database me
+        if row and not row[0]:
+            cursor_db.execute(
+                "UPDATE users SET invite_code=? WHERE user_id=?",
+                (invite_code, user_id)
+            )
+            db.commit()
 
         db.close()
 
@@ -444,22 +454,6 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "😎 Baklol Badge"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
-
-    except Exception as e:
-        logging.error(f"Error in invite command: {e}")
-        await update.message.reply_text("Kuch toh gadbad hui hai dimaag me, thodi der baad try kar! 😭")
-
-    except Exception as e:
-        logging.error(f"Error in invite command: {e}")
-        await update.message.reply_text("Kuch toh gadbad hui hai dimaag me, thodi der baad try kar! 😭")
-    except Exception as e:
-        logging.error(f"Error in invite command: {e}")
-        await update.message.reply_text("Kuch toh gadbad hui hai dimaag me, thodi der baad try kar! 😭")
-
-    except Exception as e:
-        logging.error(f"Error in invite command: {e}")
-        await update.message.reply_text("Kuch toh gadbad hui hai dimaag me, thodi der baad try kar! 😭")
-
 
     except Exception as e:
         logging.error(f"Error in invite command: {e}")
