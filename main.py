@@ -105,6 +105,33 @@ def register_user(user, context=None):
 
 
 def add_referral_direct(db, invite_code, new_user_id):
+    def add_xp(user_id, amount=5):
+    db = get_db_connection()
+    cursor = db.cursor()
+
+    cursor.execute(
+        "SELECT xp, level FROM users WHERE user_id=?",
+        (user_id,)
+    )
+
+    row = cursor.fetchone()
+
+    if not row:
+        db.close()
+        return None
+
+    xp = row[0] + amount
+    level = (xp // 100) + 1
+
+    cursor.execute(
+        "UPDATE users SET xp=?, level=? WHERE user_id=?",
+        (xp, level, user_id)
+    )
+
+    db.commit()
+    db.close()
+
+    return level
     cursor = db.cursor()
     cursor.execute("SELECT user_id FROM users WHERE invite_code=?", (invite_code,))
     inviter = cursor.fetchone()
@@ -167,6 +194,8 @@ DARE_TASKS = [
 # =========================
 HELP_TEXT = """
 😏 Commands sun lo bhai:
+/profile - apni profile dekho 😎
+
 
 /start - game shuru karein
 /help - menu check karo
@@ -438,7 +467,45 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ⚡100 Daily Messages
 😎 Baklol Badge"""
     )
+    
+async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    db = get_db_connection()
+    cursor = db.cursor()
+
+    user_id = update.effective_user.id
+
+    cursor.execute("""
+        SELECT username, referrals, badge, premium, xp, level
+        FROM users
+        WHERE user_id=?
+    """, (user_id,))
+
+    row = cursor.fetchone()
+    db.close()
+
+    if not row:
+        await update.message.reply_text("Pehle /start kar bhai 😎")
+        return
+
+    username, referrals, badge, premium, xp, level = row
+
+    premium_text = "✅ Yes" if premium else "❌ No"
+
+    text = f"""
+👤 @{username}
+
+🏅 Badge : {badge}
+
+⭐ Level : {level}
+✨ XP : {xp}
+
+👥 Referrals : {referrals}
+
+💎 Premium : {premium_text}
+"""
+
+    await update.message.reply_text(text)
 
 # =========================
 # MAIN CHAT HANDLER
@@ -482,6 +549,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.chat.send_action(action=ChatAction.TYPING)
+    add_xp(user_id)
 
     reply = get_ai_reply(user_id, raw_text)
 
@@ -509,6 +577,7 @@ def main():
     app.add_handler(CommandHandler("mode", mode_command))
     app.add_handler(CommandHandler("game", truth_or_dare))
     app.add_handler(CommandHandler("invite", invite))
+    app.add_handler(CommandHandler("profile", profile))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
 
