@@ -78,6 +78,31 @@ def generate_invite_code():
 
 
 def register_user(user, context=None):
+    def add_xp(user.id, amount=5):
+    db = get_db_connection()
+    cursor = db.cursor()
+
+    cursor.execute(
+        "SELECT xp FROM users WHERE user.id=?",
+        (user.id,)
+    )
+
+    row = cursor.fetchone()
+
+    if not row:
+        db.close()
+        return
+
+    xp = row[0] + amount
+    level = (xp // 100) + 1
+
+    cursor.execute(
+        "UPDATE users SET xp=?, level=? WHERE user_id=?",
+        (xp, level, user_id)
+    )
+
+    db.commit()
+    db.close()
     db = get_db_connection()
     cursor = db.cursor()
     try:
@@ -104,8 +129,7 @@ def register_user(user, context=None):
         db.close()
 
 
-def add_referral_direct(db, invite_code, new_user_id):
-    def add_xp(user_id, amount=5):
+
         db = get_db_connection()
     cursor = db.cursor()
 
