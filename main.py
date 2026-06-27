@@ -469,8 +469,7 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "😎 Baklol Badge"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Error in invite command: {e}")
+    
     finally:
         db.close()
 
