@@ -396,64 +396,48 @@ async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Ya toh 'truth' chunno ya 'dare'.. ye teesra dimag mat lagao! 🤦‍♂️")
 
-
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user_id = update.effective_user.id
-        
-        # Ab sahi wale database se connection open hoga
-        db = get_db_connection()
-        cursor_db = db.cursor()
-        
-        cursor_db.execute(
+    db = get_db_connection()
+    cursor = db.cursor()
+
+    user_id = update.effective_user.id
+
+    cursor.execute(
+        "SELECT invite_code, referrals FROM users WHERE user_id=?",
+        (user_id,)
+    )
+
+    row = cursor.fetchone()
+
+    if row is None:
+        register_user(update.effective_user)
+        cursor.execute(
             "SELECT invite_code, referrals FROM users WHERE user_id=?",
             (user_id,)
         )
-        row = cursor_db.fetchone()
+        row = cursor.fetchone()
 
-        if not row:
-            db.close()
-            register_user(update.effective_user, context)
-            
-            db = get_db_connection()
-            cursor_db = db.cursor()
-            cursor_db.execute(
-                "SELECT invite_code, referrals FROM users WHERE user_id=?",
-                (user_id,)
-            )
-            row = cursor_db.fetchone()
+    invite_code = row[0]
+    referrals = row[1]
 
-        # Agar row nahi hai ya code galti se khali hai toh naya random token generate hoga
-        invite_code = row[0] if (row and row[0]) else secrets.token_hex(4)
-        referrals = row[1] if (row and row[1]) else 0
+    bot_username = (await context.bot.get_me()).username
 
-        # Agar user tha par code nahi bana tha toh update kar dete hain database me
-        if row and not row[0]:
-            cursor_db.execute(
-                "UPDATE users SET invite_code=? WHERE user_id=?",
-                (invite_code, user_id)
-            )
-            db.commit()
+    invite_link = f"https://t.me/{bot_username}?start={invite_code}"
 
-        db.close()
+    db.close()
 
-        try:
-            bot_username = (await context.bot.get_me()).username
-        except Exception:
-            bot_username = context.bot.username or "YourBotUsername"
+    await update.message.reply_text(
+        f"""👥 Invite Friends & Earn Rewards
 
-        invite_link = f"https://t.me/{bot_username}?start={invite_code}"
+🔗 {invite_link}
 
-        text = (
-            "👥 *Invite Friends & Earn Rewards*\n\n"
-            f"🔗 {invite_link}\n\n"
-            f"👥 Referrals: {referrals}/5\n\n"
-            "🎁 *Unlock at 5 referrals*\n"
-            "🔥 Premium Roast\n"
-            "⚡ 100 Daily Messages\n"
-            "😎 Baklol Badge"
-        )
-        await update.message.reply_text(text, parse_mode="Markdown")
+👥 Referrals: {referrals}/5
+
+🎁 Rewards:
+🔥 Premium Roast
+⚡100 Daily Messages
+😎 Baklol Badge"""
+    )
 
     except Exception as e:
         logging.error(f"Error in invite command: {e}")
