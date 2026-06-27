@@ -40,38 +40,41 @@ logging.basicConfig(
 def get_db_connection():
     return sqlite3.connect("baklol_v2.db", check_same_thread=False)
 
-conn = get_db_connection()
-cursor = conn.cursor()
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
-    username TEXT,
-    invite_code TEXT UNIQUE,
-    invited_by TEXT,
-    referrals INTEGER DEFAULT 0,
-    badge TEXT DEFAULT 'Newbie',
-    premium INTEGER DEFAULT 0,
-    daily_messages INTEGER DEFAULT 50,
-    xp INTEGER DEFAULT 0,
-    level INTEGER DEFAULT 1
-)
-""")
-conn.commit()
-
-try:
-    cursor.execute("ALTER TABLE users ADD COLUMN referrals INTEGER DEFAULT 0")
+def init_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        invite_code TEXT UNIQUE,
+        invited_by TEXT,
+        referrals INTEGER DEFAULT 0,
+        badge TEXT DEFAULT 'Newbie',
+        premium INTEGER DEFAULT 0,
+        daily_messages INTEGER DEFAULT 50,
+        xp INTEGER DEFAULT 0,
+        level INTEGER DEFAULT 1
+    )
+    """)
     conn.commit()
-except sqlite3.OperationalError:
-    pass
 
-try:
-    cursor.execute("ALTER TABLE users ADD COLUMN invite_code TEXT")
-    conn.commit()
-except sqlite3.OperationalError:
-    pass
+    # Column checks safely
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN referrals INTEGER DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
 
-conn.close()
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN invite_code TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+    
+    conn.close()
 
+init_db()
 
 def generate_invite_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
@@ -95,61 +98,28 @@ def add_xp(user_id, amount=5):
     )
     db.commit()
     db.close()
+
+
 def add_referral_direct(db, invite_code, new_user_id):
     cursor = db.cursor()
-
-    cursor.execute(
-        "SELECT user_id FROM users WHERE invite_code=?",
-        (invite_code,)
-    )
-
+    cursor.execute("SELECT user_id FROM users WHERE invite_code=?", (invite_code,))
     inviter = cursor.fetchone()
-
     if not inviter:
         return
 
     inviter_id = inviter[0]
-
     if inviter_id == new_user_id:
         return
 
-    cursor.execute(
-        "SELECT invited_by FROM users WHERE user_id=?",
-        (new_user_id,)
-    )
-
+    cursor.execute("SELECT invited_by FROM users WHERE user_id=?", (new_user_id,))
     row = cursor.fetchone()
-
     if row and row[0]:
         return
 
-    cursor.execute(
-        "UPDATE users SET invited_by=? WHERE user_id=?",
-        (invite_code, new_user_id)
-    )
-
-    cursor.execute(
-        "UPDATE users SET referrals = referrals + 1 WHERE user_id=?",
-        (inviter_id,)
-    )
-
-    cursor.execute(
-        "SELECT referrals FROM users WHERE user_id=?",
-        (inviter_id,)
-    )
-
-    referrals = cursor.fetchone()[0]
-
-    if referrals >= 5:
-        cursor.execute("""
-            UPDATE users
-            SET premium=1,
-                badge='Baklol VIP',
-                daily_messages=100
-            WHERE user_id=?
-        """, (inviter_id,))
-
+    cursor.execute("UPDATE users SET invited_by=? WHERE user_id=?", (invite_code, new_user_id))
+    cursor.execute("UPDATE users SET referrals = COALESCE(referrals, 0) + 1 WHERE user_id=?", (inviter_id,))
     db.commit()
+
 
 def register_user(user, context=None):
     db = get_db_connection()
@@ -171,35 +141,7 @@ def register_user(user, context=None):
             db.commit()
 
         if context and context.args:
-            reward = add_referral_direct(db, context.args[0], user.id)if referrals >= 5:
-    cursor.execute("""
-        UPDATE users
-        SET premium=1,
-            badge='Baklol VIP',
-            daily_messages=100
-        WHERE user_id=?
-    """, (inviter_id,))
-    db.commit()
-    return inviter_id
-
-db.commit()
-return None
-
-if reward:
-    context.application.create_task(
-        context.bot.send_message(
-            chat_id=reward,
-            text="""🎉 Congratulations!
-
-5 referrals complete.
-
-💎 Premium Activated
-🏅 Baklol VIP Badge unlocked
-⚡ Daily limit increased to 100
-
-Baklol family me swagat hai 😎🔥"""
-        )
-    )
+            add_referral_direct(db, context.args[0], user.id)
     except Exception as e:
         logging.error(f"Registration error: {e}")
     finally:
@@ -247,21 +189,22 @@ DARE_TASKS = [
 # TEXTS
 # =========================
 HELP_TEXT = """
-😏 Commands sun lo bhai:
+😏 *Commands sun lo bhai:*
+━━━━━━━━━━━━━━━━━━━━
 /profile - apni profile dekho 😎
-
 /start - game shuru karein
 /help - menu check karo
 /about - mere baare me jaano
 /ping - check kar main zinda hoon ya nahi
 /mode normal - thoda theek thaak behave karunga
 /mode savage - ekdum tabaahi roasty replies 🔥
-/mode emotional - dard dukh baantne ke liye
+/mode emotional - dukh-dard baantne ke liye
 /mode flirty - thoda maze lene ke liye 😉
 /game truth - Sach bolna padega beta 🤔
 /game dare - Himmat hai toh task poora kar 🔥
 /invite - dosto ko bulao aur rewards jeeto 👥
 /reset - purani baatein bhool jao (clear memory)
+━━━━━━━━━━━━━━━━━━━━
 """
 
 ABOUT_TEXT = """
@@ -421,7 +364,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(HELP_TEXT)
+    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
 
 
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -509,18 +452,17 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bot_username = context.bot.username or "YourBotUsername"
 
     invite_link = f"https://t.me/{bot_username}?start={invite_code}"
-
     db.close()
-    
-status = "✅ Claimed" if referrals >= 5 else f"{referrals}/5"
+
     await update.message.reply_text(
-        f"👥 Invite Friends & Earn Rewards\n\n"
+        f"👥 *Invite Friends & Earn Rewards*\n\n"
         f"🔗 {invite_link}\n\n"
-        f"👥 Referrals: {status}\n\n"
-        f"🎁 Rewards:\n"
+        f"👥 *Referrals:* {referrals}/5\n\n"
+        f"🎁 *Rewards:* \n"
         f"🔥 Premium Roast\n"
         f"⚡ 100 Daily Messages\n"
-        f"😎 Baklol Badge"
+        f"😎 Baklol Badge",
+        parse_mode="Markdown"
     )
 
     
@@ -537,28 +479,34 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """, (user_id,))
 
     row = cursor.fetchone()
-    db.close()
 
     if not row:
         await update.message.reply_text("Pehle /start kar bhai 😎")
+        db.close()
         return
 
     username, referrals, badge, premium, xp, level = row
+    
+    # Auto Upgrade System for Baklol Badge
+    if referrals >= 5 and badge == 'Newbie':
+        badge = "Baklol Badge 😎"
+        cursor.execute("UPDATE users SET badge=? WHERE user_id=?", (badge, user_id))
+        db.commit()
+
     premium_text = "✅ Yes" if premium else "❌ No"
+    db.close()
 
-    text = f"""
-👤 @{username or 'User'}
+    text = f"""😎 *BAKLOL BOT PROFILE* 😎
+━━━━━━━━━━━━━━━━━━━━
+👤 *Username:* @{username or 'User'}
+🏅 *Badge:* {badge}
 
-🏅 Badge : {badge}
+⭐ *Level:* {level}  |  ✨ *XP:* {xp}
+👥 *Referrals:* {referrals}/5
+💎 *Premium:* {premium_text}
+━━━━━━━━━━━━━━━━━━━━"""
 
-⭐ Level : {level}
-✨ XP : {xp}
-
-👥 Referrals : {referrals}
-
-💎 Premium : {premium_text}
-"""
-    await update.message.reply_text(text)
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 
 # =========================
@@ -643,3 +591,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+        
