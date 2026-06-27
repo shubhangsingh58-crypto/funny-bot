@@ -399,11 +399,10 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
         
-        # 1. Pehle database ka active connection kholein
+        # Pehle database connection open karein
         db = get_db_connection()
         cursor_db = db.cursor()
         
-        # 2. Connection ke saath user data fetch karein
         cursor_db.execute(
             "SELECT invite_code, referrals FROM users WHERE user_id=?",
             (user_id,)
@@ -411,11 +410,9 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         row = cursor_db.fetchone()
 
         if not row:
-            # Agar database me user nahi hai toh pehle connection close karke register karein
             db.close()
             register_user(update.effective_user, context)
             
-            # Phir se naya connection open karke data nikalein
             db = get_db_connection()
             cursor_db = db.cursor()
             cursor_db.execute(
@@ -427,7 +424,7 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         invite_code = row[0] if (row and row[0]) else generate_invite_code()
         referrals = row[1] if (row and row[1]) else 0
 
-        # Kaam khatam hote hi connection ko safe tarike se close karein
+        # Connection safe close karein
         db.close()
 
         try:
@@ -448,6 +445,9 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_text(text, parse_mode="Markdown")
 
+    except Exception as e:
+        logging.error(f"Error in invite command: {e}")
+        await update.message.reply_text("Kuch toh gadbad hui hai dimaag me, thodi der baad try kar! 😭")
     except Exception as e:
         logging.error(f"Error in invite command: {e}")
         await update.message.reply_text("Kuch toh gadbad hui hai dimaag me, thodi der baad try kar! 😭")
