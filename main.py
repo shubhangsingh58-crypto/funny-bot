@@ -51,10 +51,11 @@ def init_db():
         invited_by TEXT,
         referrals INTEGER DEFAULT 0,
         badge TEXT DEFAULT 'Newbie',
-        premium INTEGER DEFAULT 0,
-        daily_messages INTEGER DEFAULT 50,
-        xp INTEGER DEFAULT 0,
-        level INTEGER DEFAULT 1
+premium INTEGER DEFAULT 0,
+daily_messages INTEGER DEFAULT 50,
+coins INTEGER DEFAULT 100,
+xp INTEGER DEFAULT 0,
+level INTEGER DEFAULT 1
     )
     """)
     conn.commit()
@@ -65,6 +66,11 @@ def init_db():
         conn.commit()
     except sqlite3.OperationalError:
         pass
+        try:
+    cursor.execute("ALTER TABLE users ADD COLUMN coins INTEGER DEFAULT 100")
+    conn.commit()
+except sqlite3.OperationalError:
+    pass
 
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN invite_code TEXT")
@@ -91,10 +97,15 @@ def add_xp(user_id, amount=5):
 
     xp = (row[0] or 0) + amount
     level = (xp // 100) + 1
+    cursor.execute(
+    "UPDATE users SET coins = coins + 2 WHERE user_id=?",
+    (user_id,)
+)
 
     cursor.execute(
-        "UPDATE users SET xp=?, level=? WHERE user_id=?",
-        (xp, level, user_id)
+    "UPDATE users SET xp=?, level=?, coins=coins+2 WHERE user_id=?",
+    (xp, level, user_id)
+)
     )
     db.commit()
     db.close()
@@ -473,18 +484,20 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     cursor.execute("""
-        SELECT username, referrals, badge, premium, xp, level
-        FROM users
-        WHERE user_id=?
-    """, (user_id,))
-    row = cursor.fetchone()
+    SELECT username, referrals, badge, premium, xp, level, coins
+    FROM users
+    WHERE user_id=?
+""", (user_id,))
 
-    if not row:
-        await update.message.reply_text("Pehle /start kar bhai 😎")
-        db.close()
-        return
+row = cursor.fetchone()
 
-    username, referrals, badge, premium, xp, level = row
+db.close()
+
+if not row:
+    await update.message.reply_text("Pehle /start kar bhai 😎")
+    return
+
+username, referrals, badge, premium, xp, level, coins = row
     
     # Auto Upgrade System for Baklol Badge
     if referrals >= 5 and badge == 'Newbie':
@@ -500,7 +513,8 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = f"""👤 <b>{username_display}</b>\n
 🏅 <b>Badge :</b> {badge}\n
 ⭐ <b>Level :</b> {level}
-✨ <b>XP :</b> {xp}\n
+✨ <b>XP :</b> {xp}
+💰 <b>Coins :</b> {coins}\n
 👥 <b>Referrals :</b> {referrals}/5\n
 💎 <b>Premium :</b> {premium_text}"""
 
