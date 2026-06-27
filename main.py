@@ -106,7 +106,7 @@ def register_user(user, context=None):
 
 def add_referral_direct(db, invite_code, new_user_id):
     def add_xp(user_id, amount=5):
-    db = get_db_connection()
+        db = get_db_connection()
     cursor = db.cursor()
 
     cursor.execute(
