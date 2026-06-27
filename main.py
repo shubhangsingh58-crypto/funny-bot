@@ -59,7 +59,7 @@ def init_db():
     """)
     conn.commit()
 
-    # Column checks safely
+    # Column checks safely to support incremental upgrades
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN referrals INTEGER DEFAULT 0")
         conn.commit()
@@ -189,7 +189,7 @@ DARE_TASKS = [
 # TEXTS
 # =========================
 HELP_TEXT = """
-😏 *Commands sun lo bhai:*
+😏 <b>Commands sun lo bhai:</b>
 ━━━━━━━━━━━━━━━━━━━━
 /profile - apni profile dekho 😎
 /start - game shuru karein
@@ -198,7 +198,7 @@ HELP_TEXT = """
 /ping - check kar main zinda hoon ya nahi
 /mode normal - thoda theek thaak behave karunga
 /mode savage - ekdum tabaahi roasty replies 🔥
-/mode emotional - dukh-dard baantne ke liye
+/mode emotional - dard dukh baantne ke liye
 /mode flirty - thoda maze lene ke liye 😉
 /game truth - Sach bolna padega beta 🤔
 /game dare - Himmat hai toh task poora kar 🔥
@@ -364,7 +364,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
+    await update.message.reply_text(HELP_TEXT, parse_mode="HTML")
 
 
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -397,7 +397,7 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_modes[user_id] = mode
-    await update.message.reply_text(f"Mood switched to *{mode}* bhaiya! 😎", parse_mode="Markdown")
+    await update.message.reply_text(f"Mood switched to <b>{mode}</b> bhaiya! 😎", parse_mode="HTML")
 
 
 async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -414,10 +414,10 @@ async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if choice == "truth":
         question = random.choice(TRUTH_QUESTIONS)
-        await update.message.reply_text(f"Ab sach bolna padega beta... 🤔\n\n*Sawaal:* {question}", parse_mode="Markdown")
+        await update.message.reply_text(f"Ab sach bolna padega beta... 🤔\n\n<b>Sawaal:</b> {question}", parse_mode="HTML")
     elif choice == "dare":
         task = random.choice(DARE_TASKS)
-        await update.message.reply_text(f"Dum hai toh poora kar ke dikha! 🔥\n\n*Task:* {task}", parse_mode="Markdown")
+        await update.message.reply_text(f"Dum hai toh poora kar ke dikha! 🔥\n\n<b>Task:</b> {task}", parse_mode="HTML")
     else:
         await update.message.reply_text("Ya toh 'truth' chunno ya 'dare'.. ye teesra dimag mat lagao! 🤦‍♂️")
 
@@ -432,7 +432,6 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "SELECT invite_code, referrals FROM users WHERE user_id=?",
         (user_id,)
     )
-
     row = cursor.fetchone()
 
     if row is None:
@@ -454,16 +453,17 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     invite_link = f"https://t.me/{bot_username}?start={invite_code}"
     db.close()
 
-    await update.message.reply_text(
-        f"👥 *Invite Friends & Earn Rewards*\n\n"
+    text = (
+        f"👥 <b>Invite Friends & Earn Rewards</b>\n\n"
         f"🔗 {invite_link}\n\n"
-        f"👥 *Referrals:* {referrals}/5\n\n"
-        f"🎁 *Rewards:* \n"
+        f"👥 <b>Referrals:</b> {referrals}/5\n\n"
+        f"🎁 <b>Rewards:</b>\n"
         f"🔥 Premium Roast\n"
         f"⚡ 100 Daily Messages\n"
-        f"😎 Baklol Badge",
-        parse_mode="Markdown"
+        f"😎 Baklol Badge"
     )
+
+    await update.message.reply_text(text, parse_mode="HTML")
 
     
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -477,7 +477,6 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         FROM users
         WHERE user_id=?
     """, (user_id,))
-
     row = cursor.fetchone()
 
     if not row:
@@ -496,17 +495,16 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     premium_text = "✅ Yes" if premium else "❌ No"
     db.close()
 
-    text = f"""😎 *BAKLOL BOT PROFILE* 😎
-━━━━━━━━━━━━━━━━━━━━
-👤 *Username:* @{username or 'User'}
-🏅 *Badge:* {badge}
+    username_display = f"@{username}" if username else "User"
 
-⭐ *Level:* {level}  |  ✨ *XP:* {xp}
-👥 *Referrals:* {referrals}/5
-💎 *Premium:* {premium_text}
-━━━━━━━━━━━━━━━━━━━━"""
+    text = f"""👤 <b>{username_display}</b>\n
+🏅 <b>Badge :</b> {badge}\n
+⭐ <b>Level :</b> {level}
+✨ <b>XP :</b> {xp}\n
+👥 <b>Referrals :</b> {referrals}/5\n
+💎 <b>Premium :</b> {premium_text}"""
 
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode="HTML")
 
 
 # =========================
@@ -591,4 +589,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+  
+
+
+
         
