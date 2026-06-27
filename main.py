@@ -399,8 +399,9 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
         
-        # Pehle database connection open karein
-        db = get_db_connection()
+        # Tumhare code ke mutabik direct sqlite3 se connect karna hai
+        import sqlite3
+        db = sqlite3.connect('funny_bot.db')
         cursor_db = db.cursor()
         
         cursor_db.execute(
@@ -413,7 +414,7 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.close()
             register_user(update.effective_user, context)
             
-            db = get_db_connection()
+            db = sqlite3.connect('funny_bot.db')
             cursor_db = db.cursor()
             cursor_db.execute(
                 "SELECT invite_code, referrals FROM users WHERE user_id=?",
@@ -424,7 +425,6 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         invite_code = row[0] if (row and row[0]) else generate_invite_code()
         referrals = row[1] if (row and row[1]) else 0
 
-        # Connection safe close karein
         db.close()
 
         try:
@@ -444,6 +444,10 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "😎 Baklol Badge"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
+
+    except Exception as e:
+        logging.error(f"Error in invite command: {e}")
+        await update.message.reply_text("Kuch toh gadbad hui hai dimaag me, thodi der baad try kar! 😭")
 
     except Exception as e:
         logging.error(f"Error in invite command: {e}")
