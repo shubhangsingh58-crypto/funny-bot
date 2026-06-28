@@ -63,7 +63,6 @@ def init_db():
     """)
     conn.commit()
 
-    # Column upgrades handled safely step-by-step
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN referrals INTEGER DEFAULT 0")
         conn.commit()
@@ -213,7 +212,7 @@ def register_user(user, context=None):
 user_memories = defaultdict(lambda: deque(maxlen=8))   
 user_modes = defaultdict(lambda: "normal")             
 last_message_time = {}                                 
-game_sessions = {}  # Format: {user_id: {"type": "guess", "number": 5, "quiz_ans": "a"}}
+game_sessions = {}  
 
 BOT_NAME_HINTS = ["funny bot", "funnybot"]
 
@@ -232,9 +231,6 @@ MEME_LIST = [
     "Engineer dosto ki life: Degree haath me hai, par dimaag me sirf bakchodi bhari hai! 😎"
 ]
     
-# =========================
-# TRUTH & DARE QUESTIONS
-# =========================
 TRUTH_QUESTIONS = [
     "Teri life ka sabse bada aur embarassing secret kya hai? 👀",
     "Tu kabhi kisi pe line maarte hue pakda gaya hai? 😂",
@@ -259,6 +255,8 @@ HELP_TEXT = """
 /quiz - quiz khel kar coins jeeto 🧠
 /id - user aur group ki unique id dekho 🆔
 /ludo - dice roll karke coins reward pao 🎲
+/love - love percent check karo ❤️
+/kill - chat fun shootout context game 💥
 /start - game shuru karein
 /help - menu check karo
 /about - mere baare me jaano
@@ -281,7 +279,7 @@ INTRO_TEXT = (
 )
 
 # =========================
-# PERSONALITY / SYSTEM PROMPT
+# PERSONALITY PROMPTS
 # =========================
 BASE_SYSTEM_PROMPT = """
 You are NOT an AI, robot, or a chatbot. Never call yourself a bot, AI, or language model. 
@@ -362,7 +360,7 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
         return "Reply dene gaya tha, raste me thoda system latak gaya 😭"
 
 # =========================
-# COMMANDS
+# STANDARD COMMANDS
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update.effective_user, context)
@@ -448,65 +446,83 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # EXISTING MINI GAMES
 # =========================
 async def meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends a random witty text-based pop joke."""
     await update.message.reply_text(f"😂 <b>Baklol Joke:</b>\n\n{random.choice(MEME_LIST)}", parse_mode="HTML")
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Starts a number guessing mini-game."""
     user_id = update.effective_user.id
     secret_num = random.randint(1, 10)
     game_sessions[user_id] = {"type": "guess", "number": secret_num}
-    await update.message.reply_text("🎮 <b>Guess the Number Game!</b>\n\nMaine 1 se 10 ke beech ek number socha hai. Guess karo aur direct chat me answer send karo! (e.g. 5)")
+    await update.message.reply_text("🎮 <b>Guess the Number Game!</b>\n\nMaine 1 se 10 ke beech ek number socha hai. Guess karo aur direct chat me answer send karo!")
 
 async def quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Triggers a quick trivia game."""
     user_id = update.effective_user.id
     quiz = random.choice(QUIZ_BANK)
     game_sessions[user_id] = {"type": "quiz", "answer": quiz["a"]}
     await update.message.reply_text(f"🧠  <b>Instant Baklol Quiz!</b>\n\n{quiz['q']}\n\n👉 Apne answer ke option ka letter (A, B, C, D) direct reply me likho!")
 
-
-# ==========================================
-# 🆕 NEW ADDED FEATURES (INTEGRATED SAFELY)
-# ==========================================
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends User ID and Group ID in requested custom format."""
     user = update.effective_user
     chat_obj = update.effective_chat
-    
-    # Custom required font design layout
     response = (
-        f"👤 <b>{user.first_name} 夜🌙'ꜱ Uꜱᴇʀ Iᴅ:</b> <code>{user.id}</code>\n"
+        f"👤 <b>{user.first_name} 夜🌙's Uꜱᴇʀ Iᴅ:</b> <code>{user.id}</code>\n"
         f"👥 <b>Gʀᴏᴜᴘ Iᴅ :</b> <code>{chat_obj.id}</code>"
     )
     await update.message.reply_text(response, parse_mode="HTML")
 
 async def ludo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Triggers genuine telegram animated dice, calculates rewards & updates database balance."""
     user_id = update.effective_user.id
-    register_user(update.effective_user) # Safety check
-    
-    # Sending native interactive dice
+    register_user(update.effective_user)
     dice_msg = await update.message.chat.send_dice(emoji="🎲")
     dice_value = dice_msg.dice.value
-    
-    # Balance logic multiplier calculation
     coins_reward = dice_value * 15
     
-    # SQLite Atomic DB Transaction
     db = get_db_connection()
     cursor = db.cursor()
     cursor.execute("UPDATE users SET coins = COALESCE(coins, 100) + ? WHERE user_id = ?", (coins_reward, user_id))
     db.commit()
     db.close()
     
-    # Delayed response mimicking dice rotation animation complete event
     time.sleep(2)
     await update.message.reply_text(
         f"🎲 <b>Ludo Roll Result!</b>\n\nAapka point aaya: <b>{dice_value}</b>\n🎁 Aapko mile <b>+{coins_reward} Coins! 💰</b>",
         parse_mode="HTML"
     )
 
+# ==========================================
+# 🆕 NEW ADDED CODES: PHASE 2 (ADDED SAFELY)
+# ==========================================
+async def love_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Calculates fun automated love percentage."""
+    percentage = random.randint(0, 100)
+    
+    if percentage > 80:
+        punchline = "Rab ne bana di jodi! Ekdum perfect match 💖"
+    elif percentage > 45:
+        punchline = "Thoda effort maaro, line clear ho sakti hai 😉"
+    else:
+        punchline = "Tumse na ho payega, focus on gaming career 💀"
+        
+    await update.message.reply_text(
+        f"❤️ <b>Baklol Love Calculator</b> ❤️\n\n✨ Match Rate: <b>{percentage}%</b>\n👉 <i>{punchline}</i>", 
+        parse_mode="HTML"
+    )
+
+async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Triggers fun fictional chat knockout alert context upon message replies."""
+    if not update.message.reply_to_message:
+        await update.message.reply_text("❗ Kisi kaleshi bande ke message par reply karke `/kill` likho tabhi maza aayega!")
+        return
+        
+    instigator = update.effective_user.first_name
+    victim = update.message.reply_to_message.from_user.first_name
+    
+    kill_scenes = [
+        f"⚡ <b>{instigator}</b> ne <b>{victim}</b> ko server lobby me AWM se 360-no scope headshot de maara! 🎮💥",
+        f"🦖 <b>{instigator}</b> ne chat room me bhookha dynamic dinosaur chhod diya, jo <b>{victim}</b> ko kacha chaba gaya! 😂",
+        f"💣 <b>{instigator}</b> ne gaming bomb feka, <b>{victim}</b> ka system dhuan-dhuan ho gaya! 🤫"
+    ]
+    
+    await update.message.reply_text(random.choice(kill_scenes), parse_mode="HTML")
 
 # =========================
 # MAIN CHAT HANDLER
@@ -523,10 +539,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     last_message_time[user_id] = now
 
-    # Intercept for Mini-Games Answers
     if user_id in game_sessions:
         session = game_sessions[user_id]
-        
         if session["type"] == "guess":
             if raw_text.isdigit():
                 guessed = int(raw_text)
@@ -595,18 +609,18 @@ def main():
     app.add_handler(CommandHandler("invite", invite))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
-    
-    # RETAINED PREVIOUS CODES
     app.add_handler(CommandHandler("meme", meme_command))
     app.add_handler(CommandHandler("guess", guess_command))
     app.add_handler(CommandHandler("quiz", quiz_command))
-    
-    # NEW FEATURE HANDLERS MOUNTED SAFELY
     app.add_handler(CommandHandler("id", id_command))
     app.add_handler(CommandHandler("ludo", ludo_command))
     
+    # NEW HANDLERS REGISTERED VIA ASSIGNED STRATEGY
+    app.add_handler(CommandHandler("love", love_command))
+    app.add_handler(CommandHandler("kill", kill_command))
+    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    print("Funny Bot V4 With Mini-Games & Memes Running Smoothly...")
+    print("Funny Bot Upgraded Smoothly (ID, Ludo, Love, Kill Active)...")
     app.run_polling()
 
 if __name__ == "__main__":
