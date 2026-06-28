@@ -7,7 +7,7 @@ import re
 from collections import defaultdict, deque
 import sqlite3
 import string
-from datetime import datetime, datetime as dt
+from datetime import datetime
 from telegram import Update
 from telegram.constants import ChatAction, ChatType
 from telegram.ext import (
@@ -63,7 +63,7 @@ def init_db():
     """)
     conn.commit()
 
-    # Column checks safely to support incremental upgrades
+    # Column upgrades handled safely step-by-step
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN referrals INTEGER DEFAULT 0")
         conn.commit()
@@ -98,43 +98,42 @@ def generate_invite_code():
 
 
 def check_and_update_streak(user_id):
-    """Handles daily streak logic and grants bonus coins."""
     db = get_db_connection()
     cursor = db.cursor()
-    cursor.execute("SELECT streak_count, last_streak_date, coins FROM users WHERE user_id=?", (user_id,))
+    cursor.execute("SELECT streak_count, last_streak_date FROM users WHERE user_id=?", (user_id,))
     row = cursor.fetchone()
     
     if not row:
         db.close()
         return None
 
-    streak_count, last_date_str, coins = row
+    streak_count, last_date_str = row
     streak_count = streak_count or 0
     today_str = datetime.now().strftime("%Y-%m-%d")
     
     streak_msg = ""
     
     if not last_date_str:
-        # First time setting streak
-        cursor.execute("UPDATE users SET streak_count=1, last_streak_date=?, coins=coins+50 WHERE user_id=?", (today_str, user_id))
+        cursor.execute("UPDATE users SET streak_count=1, last_streak_date=?, coins=COALESCE(coins, 100)+50 WHERE user_id=?", (today_str, user_id))
         db.commit()
         streak_msg = "🔥 <b>Daily Streak Started!</b> You got +50 Bonus Coins!"
     else:
-        last_date = datetime.strptime(last_date_str, "%Y-%m-%d").date()
-        today = datetime.now().date()
-        delta = (today - last_date).days
-        
-        if delta == 1:
-            # Active continuous streak
-            new_streak = streak_count + 1
-            cursor.execute("UPDATE users SET streak_count=?, last_streak_date=?, coins=coins+50 WHERE user_id=?", (new_streak, today_str, user_id))
-            db.commit()
-            streak_msg = f"🔥 <b>Daily Streak Maintained!</b> Day {new_streak}! You got +50 Bonus Coins!"
-        elif delta > 1:
-            # Streak broken
-            cursor.execute("UPDATE users SET streak_count=1, last_streak_date=?, coins=coins+50 WHERE user_id=?", (today_str, user_id))
-            db.commit()
-            streak_msg = "💔 <b>Streak Broken!</b> Starting fresh today. You got +50 Bonus Coins!"
+        try:
+            last_date = datetime.strptime(last_date_str, "%Y-%m-%d").date()
+            today = datetime.now().date()
+            delta = (today - last_date).days
+            
+            if delta == 1:
+                new_streak = streak_count + 1
+                cursor.execute("UPDATE users SET streak_count=?, last_streak_date=?, coins=COALESCE(coins, 100)+50 WHERE user_id=?", (new_streak, today_str, user_id))
+                db.commit()
+                streak_msg = f"🔥 <b>Daily Streak Maintained!</b> Day {new_streak}! You got +50 Bonus Coins!"
+            elif delta > 1:
+                cursor.execute("UPDATE users SET streak_count=1, last_streak_date=?, coins=COALESCE(coins, 100)+50 WHERE user_id=?", (today_str, user_id))
+                db.commit()
+                streak_msg = "💔 <b>Streak Broken!</b> Starting fresh today. You got +50 Bonus Coins!"
+        except Exception:
+            pass
             
     db.close()
     return streak_msg
@@ -153,7 +152,7 @@ def add_xp(user_id, amount=5):
     level = (xp // 100) + 1
 
     cursor.execute(
-        "UPDATE users SET xp=?, level=?, coins = COALESCE(coins, 100) + 2 WHERE user_id=?",
+        "UPDATE users SET xp=?, level=?, coins=COALESCE(coins, 100)+2 WHERE user_id=?",
         (xp, level, user_id)
     )
     db.commit()
@@ -298,45 +297,11 @@ General vibe:
 - If the user talks about being sad, comfort them like a true brother/friend, not a therapist.
 """
 
-MODE_PROMPTS = {
-    "normal": """
-Current mode: NORMAL
-- Friendly, smart, balanced but funny.
-""",
-    "savage": """
-Current mode: SAVAGE
-- Highly savage, roasty, cheeky, and full of bakchodi. 
-- Take things playfully, tease the user sharply but keep it fun.
-""",
-    "emotional": """
-Current mode: EMOTIONAL
-- Warm, caring, loyal brother vibe. Listen to their problems naturally.
-""",
-    "flirty": """
-Current mode: FLIRTY
-- Playful, charming, witty banter. Keep it fun and completely safe.
-"""
-}
-
-OWNER_KEYWORDS = [
-    "owner", "developer", "creator", "who made you", "who created you",
-    "kisne banaya", "tumhara owner", "tumhara developer", "made you",
-    "dev name", "creator name"
-]
-
-INTRO_KEYWORDS = [
-    "tu kaun hai", "tum kaun ho", "who are you", "apne baare me bata",
-    "about yourself", "what can you do", "what are you", "introduce yourself"
-]
-
-ABUSE_WORDS = [
-    "madarchod", "bhenchod", "mc", "bc", "chutiya", "gandu", "randi", "lund"
-]
-
 # =========================
 # HELPERS
 # =========================
 def build_system_prompt(mode: str, memory_text: str = "") -> str:
+    from __main__ import MODE_PROMPTS
     mode_prompt = MODE_PROMPTS.get(mode, MODE_PROMPTS["normal"])
     prompt = BASE_SYSTEM_PROMPT + "\n\n" + mode_prompt
 
@@ -345,27 +310,31 @@ def build_system_prompt(mode: str, memory_text: str = "") -> str:
     return prompt
 
 
+MODE_PROMPTS = {
+    "normal": "\nCurrent mode: NORMAL\n- Friendly, smart, balanced but funny.\n",
+    "savage": "\nCurrent mode: SAVAGE\n- Highly savage, roasty, cheeky, and full of bakchodi.\n",
+    "emotional": "\nCurrent mode: EMOTIONAL\n- Warm, caring, loyal brother vibe.\n",
+    "flirty": "\nCurrent mode: FLIRTY\n- Playful, charming, witty banter.\n"
+}
+
+OWNER_KEYWORDS = ["owner", "developer", "creator", "who made you", "kisne banaya"]
+INTRO_KEYWORDS = ["tu kaun hai", "tum kaun ho", "who are you", "introduce yourself"]
+ABUSE_WORDS = ["madarchod", "bhenchod", "mc", "bc", "chutiya", "gandu"]
+
 def format_memory(user_id: int) -> str:
     turns = list(user_memories[user_id])
     if not turns:
         return ""
     return "\n".join(turns[-8:])
 
-
 def contains_owner_question(text: str) -> bool:
-    t = text.lower()
-    return any(k in t for k in OWNER_KEYWORDS)
-
+    return any(k in text.lower() for k in OWNER_KEYWORDS)
 
 def contains_intro_question(text: str) -> bool:
-    t = text.lower()
-    return any(k in t for k in INTRO_KEYWORDS)
-
+    return any(k in text.lower() for k in INTRO_KEYWORDS)
 
 def contains_abuse(text: str) -> bool:
-    t = text.lower()
-    return any(word in t for word in ABUSE_WORDS)
-
+    return any(word in text.lower() for word in ABUSE_WORDS)
 
 def should_reply_in_group(update: Update, bot_username: str) -> bool:
     if not update.message or not update.message.text:
@@ -380,7 +349,6 @@ def should_reply_in_group(update: Update, bot_username: str) -> bool:
         return True
     return False
 
-
 def get_ai_reply(user_id: int, user_message: str) -> str:
     memory_text = format_memory(user_id)
     mode = user_modes[user_id]
@@ -393,7 +361,6 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
         "HTTP-Referer": "https://railway.app",
         "X-Title": "Funny Bot"
     }
-
     payload = {
         "model": "openrouter/auto",
         "messages": [
@@ -401,141 +368,78 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
             {"role": "user", "content": user_message}
         ]
     }
-
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=60)
-        data = response.json()
         if response.status_code != 200:
             return "Aaj thoda dimag buffering pe chal raha hai 😵‍💫 thodi der me fir bolna."
-        return data["choices"][0]["message"]["content"].strip()
+        return response.json()["choices"][0]["message"]["content"].strip()
     except Exception:
-        return "Reply dene gaya tha, raste me thoda system latak gaya 😭 thodi der baad try kar."
-
+        return "Reply dene gaya tha, raste me thoda system latak gaya 😭"
 
 # =========================
 # COMMANDS
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update.effective_user, context)
-    text = (
-        "Yo! 😎 Main koi bot nahi, ek seedha saadha ladka hoon.\n"
-        "Savage bakchodi, roast ya game khelna ho toh batao. Seedha baatein shuru karo ya /help dekh lo!"
-    )
-    await update.message.reply_text(text)
-
+    await update.message.reply_text("Yo! 😎 Main koi bot nahi, ek seedha saadha ladka hoon. /help dekh lo!")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT, parse_mode="HTML")
 
-
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(ABOUT_TEXT)
-
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🏓 Pong! Mast online baitha hoon bhai 😎")
 
-
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_memories[user_id].clear()
+    user_memories[update.effective_user.id].clear()
     await update.message.reply_text("Done 😌 purani baatein bhool gaya main!")
-
 
 async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-
     if not context.args:
-        current = user_modes[user_id]
-        await update.message.reply_text(
-            f"Abhi main {current} mood mein hoon.\nBadalne ke liye use karo:\n/mode normal\n/mode savage\n/mode emotional\n/mode flirty"
-        )
+        await update.message.reply_text(f"Abhi main {user_modes[user_id]} mood mein hoon.")
         return
-
     mode = context.args[0].lower().strip()
-    if mode not in ["normal", "savage", "emotional", "flirty"]:
+    if mode in ["normal", "savage", "emotional", "flirty"]:
+        user_modes[user_id] = mode
+        await update.message.reply_text(f"Mood switched to <b>{mode}</b> bhaiya! 😎", parse_mode="HTML")
+    else:
         await update.message.reply_text("Valid moods: normal, savage, emotional, flirty")
-        return
-
-    user_modes[user_id] = mode
-    await update.message.reply_text(f"Mood switched to <b>{mode}</b> bhaiya! 😎", parse_mode="HTML")
-
 
 async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text(
-            "Abe sahi se bolo na bhai! 😏\n"
-            "Chunno jaldi:\n"
-            "/game truth - Sach bolne ki himmat hai?\n"
-            "/game dare - Dum hai toh task kar! 🔥"
-        )
+        await update.message.reply_text("/game truth ya /game dare likho bhai!")
         return
-
     choice = context.args[0].lower().strip()
-    
     if choice == "truth":
-        question = random.choice(TRUTH_QUESTIONS)
-        await update.message.reply_text(f"Ab sach bolna padega beta... 🤔\n\n<b>Sawaal:</b> {question}", parse_mode="HTML")
+        await update.message.reply_text(f"🤔 <b>Sawaal:</b> {random.choice(TRUTH_QUESTIONS)}", parse_mode="HTML")
     elif choice == "dare":
-        task = random.choice(DARE_TASKS)
-        await update.message.reply_text(f"Dum hai toh poora kar ke dikha! 🔥\n\n<b>Task:</b> {task}", parse_mode="HTML")
-    else:
-        await update.message.reply_text("Ya toh 'truth' chunno ya 'dare'.. ye teesra dimag mat lagao! 🤦‍♂️")
-
+        await update.message.reply_text(f"🔥 <b>Task:</b> {random.choice(DARE_TASKS)}", parse_mode="HTML")
 
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = get_db_connection()
     cursor = db.cursor()
-
     user_id = update.effective_user.id
-
-    cursor.execute(
-        "SELECT invite_code, referrals FROM users WHERE user_id=?",
-        (user_id,)
-    )
+    cursor.execute("SELECT invite_code, referrals FROM users WHERE user_id=?", (user_id,))
     row = cursor.fetchone()
-
-    if row is None:
-        register_user(update.effective_user)
-        cursor.execute(
-            "SELECT invite_code, referrals FROM users WHERE user_id=?",
-            (user_id,)
-        )
-        row = cursor.fetchone()
-
-    invite_code = row[0]
-    referrals = row[1] if row[1] is not None else 0
-
-    try:
-        bot_username = (await context.bot.get_me()).username
-    except Exception:
-        bot_username = context.bot.username or "YourBotUsername"
-
-    invite_link = f"https://t.me/{bot_username}?start={invite_code}"
     db.close()
-
-    text = (
-        f"👥 <b>Invite Friends & Earn Rewards</b>\n\n"
-        f"🔗 {invite_link}\n\n"
-        f"👥 <b>Referrals:</b> {referrals}/5\n\n"
-        f"🎁 <b>Rewards:</b>\n"
-        f"🔥 Premium Roast\n"
-        f"⚡ 100 Daily Messages\n"
-        f"😎 Baklol Badge"
-    )
-
+    
+    if not row:
+        register_user(update.effective_user)
+        return
+        
+    bot_username = (await context.bot.get_me()).username or "Bot"
+    invite_link = f"https://t.me/{bot_username}?start={row[0]}"
+    
+    text = f"👥 <b>Invite Friends</b>\n\n🔗 {invite_link}\n\n👥 <b>Referrals:</b> {row[1]}/5"
     await update.message.reply_text(text, parse_mode="HTML")
 
-
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Fetches and displays top 10 richest users based on coins."""
     db = get_db_connection()
     cursor = db.cursor()
-    cursor.execute("""
-        SELECT username, coins FROM users 
-        WHERE coins IS NOT NULL 
-        ORDER BY coins DESC LIMIT 10
-    """)
+    cursor.execute("SELECT username, coins FROM users WHERE coins IS NOT NULL ORDER BY coins DESC LIMIT 10")
     rows = cursor.fetchall()
     db.close()
 
@@ -545,127 +449,66 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = "🏆 <b>TOP BAKLOL LEADERBOARD</b> 🏆\n━━━━━━━━━━━━━━━━━━━━\n"
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-    
     for idx, row in enumerate(rows):
-        username, coins = row
-        display_name = f"@{username}" if username else "Unknown Baklol"
-        text += f"{medals[idx]} {display_name} — <b>{coins} 💰</b>\n"
-        
-    text += "━━━━━━━━━━━━━━━━━━━━\n💬 Chat aur naye features use karke top par aao!"
+        display_name = f"@{row[0]}" if row[0] else "Unknown Baklol"
+        text += f"{medals[idx]} {display_name} — <b>{row[1]} 💰</b>\n"
     await update.message.reply_text(text, parse_mode="HTML")
 
-    
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = get_db_connection()
     cursor = db.cursor()
-
-    user_id = update.effective_user.id
-
-    cursor.execute("""
-        SELECT username, referrals, badge, premium, xp, level, coins, streak_count
-        FROM users
-        WHERE user_id=?
-    """, (user_id,))
-
+    cursor.execute("SELECT username, referrals, badge, premium, xp, level, coins, streak_count FROM users WHERE user_id=?", (update.effective_user.id,))
     row = cursor.fetchone()
+    db.close()
 
     if not row:
         await update.message.reply_text("Pehle /start kar bhai 😎")
-        db.close()
         return
 
-    username, referrals, badge, premium, xp, level, coins, streak_count = row
-    
-    # Auto Upgrade System for Baklol Badge
-    if referrals >= 5 and badge == 'Newbie':
-        badge = "Baklol Badge 😎"
-        cursor.execute("UPDATE users SET badge=? WHERE user_id=?", (badge, user_id))
-        db.commit()
-
-    premium_text = "✅ Yes" if premium else "❌ No"
-    db.close()
-
-    username_display = f"@{username}" if username else "User"
-
-    text = f"""👤 <b>{username_display}</b>\n
-🏅 <b>Badge :</b> {badge}
-🔥 <b>Daily Streak :</b> {streak_count or 0} Days\n
-⭐ <b>Level :</b> {level}
-✨ <b>XP :</b> {xp}
-💰 <b>Coins :</b> {coins if coins is not None else 100}\n
-👥 <b>Referrals :</b> {referrals}/5\n
-💎 <b>Premium :</b> {premium_text}"""
-
+    text = f"""👤 <b>@{row[0] or 'User'}</b>\n
+🏅 <b>Badge :</b> {row[2]}
+🔥 <b>Daily Streak :</b> {row[7] or 0} Days\n
+⭐ <b>Level :</b> {row[5]}
+✨ <b>XP :</b> {row[4]}
+💰 <b>Coins :</b> {row[6] or 100}"""
     await update.message.reply_text(text, parse_mode="HTML")
 
-
-# =========================
-# MAIN CHAT HANDLER
-# =========================
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
-
-    user = update.effective_user
-    chat_obj = update.effective_chat
-    user_id = user.id
+    user_id = update.effective_user.id
     raw_text = update.message.text.strip()
-    text = raw_text.lower()
-
+    
     now = time.time()
-    last_time = last_message_time.get(user_id, 0)
-    if now - last_time < 1.5:
+    if now - last_message_time.get(user_id, 0) < 1.5:
         return
     last_message_time[user_id] = now
 
-    bot_username = None
-    if context.bot.username:
-        bot_username = context.bot.username
-
-    if chat_obj.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
-        if not should_reply_in_group(update, bot_username):
+    if update.effective_chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        if not should_reply_in_group(update, context.bot.username):
             return
 
-    if contains_owner_question(text):
-        await update.message.reply_text(
-            "Mujhe Shubhang ne banaya hai bhai! Ekdum kadak ladka hoon main. 😎🔥"
-        )
+    if contains_owner_question(raw_text):
+        await update.message.reply_text("Mujhe Shubhang ne banaya hai bhai! 😎🔥")
         return
-
-    if contains_intro_question(text):
+    if contains_intro_question(raw_text):
         await update.message.reply_text(INTRO_TEXT)
         return
-
-    if contains_abuse(text):
+    if contains_abuse(raw_text):
         await update.message.reply_text("Abe shaant gusse par control rakh thoda! 😭")
         return
 
-    # Trigger daily streak check safely when they interact
     streak_alert = check_and_update_streak(user_id)
     if streak_alert:
         await update.message.reply_text(streak_alert, parse_mode="HTML")
 
     await update.message.chat.send_action(action=ChatAction.TYPING)
     add_xp(user_id)
-
     reply = get_ai_reply(user_id, raw_text)
-
-    user_memories[user_id].append(f"User: {raw_text}")
-    user_memories[user_id].append(f"Bot: {reply}")
-
     await update.message.reply_text(reply)
 
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logging.error("Exception while handling update:", exc_info=context.error)
-
-
-# =========================
-# MAIN
-# =========================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about))
@@ -676,15 +519,9 @@ def main():
     app.add_handler(CommandHandler("invite", invite))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
-
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-
-    app.add_error_handler(error_handler)
-
-    print("Funny Bot V3 Running...")
+    print("Funny Bot V3 Running Smoothly...")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
-        
