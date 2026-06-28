@@ -208,14 +208,29 @@ def register_user(user, context=None):
 
 
 # =========================
-# MEMORY / STATE
+# MEMORY / STATE / GAMES DATA
 # =========================
 user_memories = defaultdict(lambda: deque(maxlen=8))   
 user_modes = defaultdict(lambda: "normal")             
 last_message_time = {}                                 
+game_sessions = {}  # Format: {user_id: {"type": "guess", "number": 5, "quiz_ans": "a"}}
 
 BOT_NAME_HINTS = ["funny bot", "funnybot"]
 
+QUIZ_BANK = [
+    {"q": "India ki capital kya hai?\n\nA) Mumbai\nB) Delhi\nC) Kolkata\nD) Chennai", "a": "b"},
+    {"q": "Thala kis player ko bola jata hai? 😂\n\nA) Virat Kohli\nB) Rohit Sharma\nC) MS Dhoni\nD) Hardik Pandya", "a": "c"},
+    {"q": "Free Fire aur BGMI me se sabse zyada lag kis me hota hai? (Just for fun!)\n\nA) BGMI\nB) Free Fire\nC) Dono bekar hain\nD) Mera device hi kharab hai 💀", "a": "d"},
+    {"q": "Internet par sabse bada search engine kaun sa hai?\n\nA) Bing\nB) Yahoo\nC) Google\nD) DuckDuckGo", "a": "c"}
+]
+
+MEME_LIST = [
+    "Dost: Bhai breakup ho gaya hai, bohot bura lag raha hai.\nMe: Ro mat bhai, chal rank push karte hain! 🎮💀",
+    "Gharwale: Humara ladka ek din bada hokar naam roshan karega.\nMe: Subah 4 baje tak reels scroll karte hue... 👁️👄👁️",
+    "Ex to Me: Tumhe mere se acchi koi nahi milegi.\nMe: Abe wahi toh chahiye, tere jaisi se toh dushman bhi bache! 😏👋",
+    "Backbenchers during exams: Bhai bas aage wale ka sir thoda left ho jaye, poora question paper chhap dunga. 📝🔥",
+    "Engineer dosto ki life: Degree haath me hai, par dimaag me sirf bakchodi bhari hai! 😎"
+]
     
 # =========================
 # TRUTH & DARE QUESTIONS
@@ -223,25 +238,12 @@ BOT_NAME_HINTS = ["funny bot", "funnybot"]
 TRUTH_QUESTIONS = [
     "Teri life ka sabse bada aur embarassing secret kya hai? 👀",
     "Tu kabhi kisi pe line maarte hue pakda gaya hai? 😂",
-    "Agar tujhe mauka mile toh tu is group mein kisko block karega? 😏",
-    "Sabse aakhri jhoot tune kisse aur kya bola tha? 🤫",
-    "Kya tune kabhi bina nahaye 3-4 din nikale hain? 😷",
-    "Teri life ka wo kaun sa sach hai jo tere gharwale jaante hain toh teri dhunai pakki hai? 💀",
-    "Kisi aisi cheez ka naam bata jo tune chori ki ho, chahe wo dosto ki canteen ka samosa hi kyun na ho! 🥐",
-    "Agar tu ek din ke liye ladki ban jaye, toh sabse pehle kya karega? 💅",
-    "Tera abhi tak ka sabse bura crush kaun raha hai aur kyun? 🤫",
-    "Kya tune kabhi apne dost ki bandi/bande par line maarne ki sochi hai? 🧐"
+    "Agar tujhe mauka mile toh tu is group mein kisko block karega? 😏"
 ]
 
 DARE_TASKS = [
     "Apni gallery ka sabse purana aur ajeeb photo group mein bhejo abhi ke abhi! 📸",
-    "Kisi bhi random dost ko message karo 'Mujhe tumse ek baat chhupani thi...' aur uska reply aane par block kar do! 😜",
-    "Apne status par likho 'Main thoda pagal hoon' aur use 15 minute tak mat hatana. 📱",
-    "Ek voice note bhejo jismein tum kisi heroine ya hero ki kharab acting kar rahe ho! 🎙️",
-    "Apne baap ko text karo 'Papa shaadi karni hai' aur jo reply aaye uska screenshot yahan bhejo! 💀",
-    "Agli 5 lines tak har message ke end mein 'Main toh ghadha hoon' likhna padega. 🐴",
-    "Apne dosto ke group mein apna ek ajeeb sa selfie khinch kar bhejo bina filter ke! 🤳",
-    "Kisi aisi ladki/ladke ko text karo jisse sadiyon se baat nahi hui, aur likho 'Tumhari yaad aa rahi thi' aur screenshot bhejo. 💀"
+    "Apne status par likho 'Main thoda pagal hoon' aur use 15 minute tak mat hatana. 📱"
 ]
 
 # =========================
@@ -252,28 +254,27 @@ HELP_TEXT = """
 ━━━━━━━━━━━━━━━━━━━━
 /profile - apni profile dekho 😎
 /leaderboard - top ameer baklolon ki list 🏆
+/meme - ek mast instant meme joke suno 😂
+/guess - number guessing game shuru karo 🎮
+/quiz - quiz khel kar coins jeeto 🧠
 /start - game shuru karein
 /help - menu check karo
 /about - mere baare me jaano
 /ping - check kar main zinda hoon ya nahi
-/mode normal - thoda theek thaak behave karunga
-/mode savage - ekdum tabaahi roasty replies 🔥
-/mode emotional - dard dukh baantne ke liye
-/mode flirty - thoda maze lene ke liye 😉
-/game truth - Sach bolna padega beta 🤔
-/game dare - Himmat hai toh task poora kar 🔥
+/mode [normal/savage/emotional/flirty] - mood badlo
+/game [truth/dare] - game khelo
 /invite - dosto ko bulao aur rewards jeeto 👥
-/reset - purani baatein bhool jao (clear memory)
+/reset - purani baatein bhool jao
 ━━━━━━━━━━━━━━━━━━━━
 """
 
 ABOUT_TEXT = """
-😏 Main koi robotic AI ya bot nahi hoon. Ek seedha saadha ladka hoon jo mast bakchodi karta hai dosto ke sath. Shubhang ne mujhe dimaag diya hai taaki tum logo ke maze le sakoon! 😎
+😏 Main koi robotic AI ya bot nahi hoon. Ek seedha saadha ladka hoon jo mast bakchodi karta hai dosto ke sath. Shubhang ne mujhe dimaag diya hai! 😎
 """
 
 INTRO_TEXT = (
     "Abe bataya toh, main ek seedha saadha ladka hoon! 😎\n"
-    "Random baatein, savage roasting, dukh-dard bhulana aur thodi bohot flirty vibes — sab on point hai.\n"
+    "Random baatein, savage roasting aur games sab on point hai.\n"
     "Aur haan, mujhe Shubhang ne banaya hai 😏🔥"
 )
 
@@ -283,32 +284,7 @@ INTRO_TEXT = (
 BASE_SYSTEM_PROMPT = """
 You are NOT an AI, robot, or a chatbot. Never call yourself a bot, AI, or language model. 
 Aap ek seedhe saade, mast-maula ladke ho jise Shubhang ne banaya hai.
-
-Core identity:
-- If someone asks who you are, say you are a simple, fun-loving guy (seedha saadha ladka), not an AI bot.
-- Developer/Creator ka naam hamesha Shubhang batana hai ekdum natural style mein.
-- Example vibe: "Mujhe Shubhang ne banaya hai bhai, ekdum kadak ladka hoon main! 😎🔥"
-
-General vibe:
-- Talk like a savage, smart, human online friend. 
-- Use casual Hinglish naturally, like friends chatting on WhatsApp/Telegram.
-- Keep replies witty, funny, sharp, and slightly roasty (savage). Don't give boring gyaan.
-- Keep answers short and crisp.
-- If the user talks about being sad, comfort them like a true brother/friend, not a therapist.
 """
-
-# =========================
-# HELPERS
-# =========================
-def build_system_prompt(mode: str, memory_text: str = "") -> str:
-    from __main__ import MODE_PROMPTS
-    mode_prompt = MODE_PROMPTS.get(mode, MODE_PROMPTS["normal"])
-    prompt = BASE_SYSTEM_PROMPT + "\n\n" + mode_prompt
-
-    if memory_text.strip():
-        prompt += f"\n\nRecent conversation context:\n{memory_text}"
-    return prompt
-
 
 MODE_PROMPTS = {
     "normal": "\nCurrent mode: NORMAL\n- Friendly, smart, balanced but funny.\n",
@@ -320,6 +296,13 @@ MODE_PROMPTS = {
 OWNER_KEYWORDS = ["owner", "developer", "creator", "who made you", "kisne banaya"]
 INTRO_KEYWORDS = ["tu kaun hai", "tum kaun ho", "who are you", "introduce yourself"]
 ABUSE_WORDS = ["madarchod", "bhenchod", "mc", "bc", "chutiya", "gandu"]
+
+def build_system_prompt(mode: str, memory_text: str = "") -> str:
+    mode_prompt = MODE_PROMPTS.get(mode, MODE_PROMPTS["normal"])
+    prompt = BASE_SYSTEM_PROMPT + "\n\n" + mode_prompt
+    if memory_text.strip():
+        prompt += f"\n\nRecent conversation context:\n{memory_text}"
+    return prompt
 
 def format_memory(user_id: int) -> str:
     turns = list(user_memories[user_id])
@@ -425,15 +408,10 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("SELECT invite_code, referrals FROM users WHERE user_id=?", (user_id,))
     row = cursor.fetchone()
     db.close()
-    
     if not row:
-        register_user(update.effective_user)
         return
-        
     bot_username = (await context.bot.get_me()).username or "Bot"
-    invite_link = f"https://t.me/{bot_username}?start={row[0]}"
-    
-    text = f"👥 <b>Invite Friends</b>\n\n🔗 {invite_link}\n\n👥 <b>Referrals:</b> {row[1]}/5"
+    text = f"👥 <b>Invite Friends</b>\n\n🔗 https://t.me/{bot_username}?start={row[0]}\n\n👥 <b>Referrals:</b> {row[1]}/5"
     await update.message.reply_text(text, parse_mode="HTML")
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -442,11 +420,9 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("SELECT username, coins FROM users WHERE coins IS NOT NULL ORDER BY coins DESC LIMIT 10")
     rows = cursor.fetchall()
     db.close()
-
     if not rows:
         await update.message.reply_text("Abhi tak leaderboard khali hai bhai! 😲")
         return
-
     text = "🏆 <b>TOP BAKLOL LEADERBOARD</b> 🏆\n━━━━━━━━━━━━━━━━━━━━\n"
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
     for idx, row in enumerate(rows):
@@ -460,29 +436,85 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("SELECT username, referrals, badge, premium, xp, level, coins, streak_count FROM users WHERE user_id=?", (update.effective_user.id,))
     row = cursor.fetchone()
     db.close()
-
     if not row:
         await update.message.reply_text("Pehle /start kar bhai 😎")
         return
-
-    text = f"""👤 <b>@{row[0] or 'User'}</b>\n
-🏅 <b>Badge :</b> {row[2]}
-🔥 <b>Daily Streak :</b> {row[7] or 0} Days\n
-⭐ <b>Level :</b> {row[5]}
-✨ <b>XP :</b> {row[4]}
-💰 <b>Coins :</b> {row[6] or 100}"""
+    text = f"👤 <b>@{row[0] or 'User'}</b>\n\n🏅 <b>Badge :</b> {row[2]}\n🔥 <b>Daily Streak :</b> {row[7] or 0} Days\n⭐ <b>Level :</b> {row[5]}\n✨ <b>XP :</b> {row[4]}\n💰 <b>Coins :</b> {row[6] or 100}"
     await update.message.reply_text(text, parse_mode="HTML")
 
+# =========================
+# NEW NEW NEW FEATURES
+# =========================
+async def meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends a random witty text-based pop joke."""
+    await update.message.reply_text(f"😂 <b>Baklol Joke:</b>\n\n{random.choice(MEME_LIST)}", parse_mode="HTML")
+
+async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts a number guessing mini-game."""
+    user_id = update.effective_user.id
+    secret_num = random.randint(1, 10)
+    game_sessions[user_id] = {"type": "guess", "number": secret_num}
+    await update.message.reply_text("🎮 <b>Guess the Number Game!</b>\n\nMaine 1 se 10 ke beech ek number socha hai. Guess karo aur direct chat me answer send karo! (e.g. 5)")
+
+async def quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Triggers a quick trivia game."""
+    user_id = update.effective_user.id
+    quiz = random.choice(QUIZ_BANK)
+    game_sessions[user_id] = {"type": "quiz", "answer": quiz["a"]}
+    await update.message.reply_text(f"🧠  <b>Instant Baklol Quiz!</b>\n\n{quiz['q']}\n\n👉 Apne answer ke option ka letter (A, B, C, D) direct reply me likho!")
+
+
+# =========================
+# MAIN CHAT HANDLER
+# =========================
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
     user_id = update.effective_user.id
     raw_text = update.message.text.strip()
+    text_clean = raw_text.lower()
     
     now = time.time()
     if now - last_message_time.get(user_id, 0) < 1.5:
         return
     last_message_time[user_id] = now
+
+    # Intercept for Mini-Games Answers
+    if user_id in game_sessions:
+        session = game_sessions[user_id]
+        
+        if session["type"] == "guess":
+            if raw_text.isdigit():
+                guessed = int(raw_text)
+                correct = session["number"]
+                if guessed == correct:
+                    db = get_db_connection()
+                    db.cursor().execute("UPDATE users SET coins=COALESCE(coins,100)+30 WHERE user_id=?", (user_id,))
+                    db.commit()
+                    db.close()
+                    del game_sessions[user_id]
+                    await update.message.reply_text(f"🎉 <b>Arrebaah Sahi Jawab!</b> Maine {correct} hi socha tha! You won <b>+30 Coins 💰</b>!", parse_mode="HTML")
+                    return
+                else:
+                    del game_sessions[user_id]
+                    await update.message.reply_text(f"❌ <b>Galat Jawab!</b> Maine {correct} socha tha. Dobara /guess karke try kar!")
+                    return
+                    
+        elif session["type"] == "quiz":
+            if text_clean in ["a", "b", "c", "d"]:
+                correct = session["answer"]
+                if text_clean == correct:
+                    db = get_db_connection()
+                    db.cursor().execute("UPDATE users SET coins=COALESCE(coins,100)+40 WHERE user_id=?", (user_id,))
+                    db.commit()
+                    db.close()
+                    del game_sessions[user_id]
+                    await update.message.reply_text("🎉 <b>Ekdum Perfect!</b> Sahi option chuna tune. You won <b>+40 Coins 💰</b>!", parse_mode="HTML")
+                    return
+                else:
+                    del game_sessions[user_id]
+                    await update.message.reply_text(f"❌ <b>Dhat Teri Ki!</b> Galat jawab. Correct answer option '{correct.upper()}' tha. Agli baar dhyan dena!")
+                    return
 
     if update.effective_chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
         if not should_reply_in_group(update, context.bot.username):
@@ -519,8 +551,14 @@ def main():
     app.add_handler(CommandHandler("invite", invite))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
+    
+    # NEW HANDLERS REGISTERED Safely
+    app.add_handler(CommandHandler("meme", meme_command))
+    app.add_handler(CommandHandler("guess", guess_command))
+    app.add_handler(CommandHandler("quiz", quiz_command))
+    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    print("Funny Bot V3 Running Smoothly...")
+    print("Funny Bot V4 With Mini-Games & Memes Running Smoothly...")
     app.run_polling()
 
 if __name__ == "__main__":
