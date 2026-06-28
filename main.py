@@ -7,6 +7,7 @@ import re
 from collections import defaultdict, deque
 import sqlite3
 import string
+from datetime import datetime, datetime as dt
 from telegram import Update
 from telegram.constants import ChatAction, ChatType
 from telegram.ext import (
@@ -55,7 +56,9 @@ def init_db():
         daily_messages INTEGER DEFAULT 50,
         coins INTEGER DEFAULT 100,
         xp INTEGER DEFAULT 0,
-        level INTEGER DEFAULT 1
+        level INTEGER DEFAULT 1,
+        streak_count INTEGER DEFAULT 0,
+        last_streak_date TEXT
     )
     """)
     conn.commit()
@@ -78,6 +81,13 @@ def init_db():
         conn.commit()
     except sqlite3.OperationalError:
         pass
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN streak_count INTEGER DEFAULT 0")
+        cursor.execute("ALTER TABLE users ADD COLUMN last_streak_date TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     
     conn.close()
 
@@ -87,10 +97,53 @@ def generate_invite_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 
+def check_and_update_streak(user_id):
+    """Handles daily streak logic and grants bonus coins."""
+    db = get_db_connection()
+    cursor = db.cursor()
+    cursor.execute("SELECT streak_count, last_streak_date, coins FROM users WHERE user_id=?", (user_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        db.close()
+        return None
+
+    streak_count, last_date_str, coins = row
+    streak_count = streak_count or 0
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    streak_msg = ""
+    
+    if not last_date_str:
+        # First time setting streak
+        cursor.execute("UPDATE users SET streak_count=1, last_streak_date=?, coins=coins+50 WHERE user_id=?", (today_str, user_id))
+        db.commit()
+        streak_msg = "🔥 <b>Daily Streak Started!</b> You got +50 Bonus Coins!"
+    else:
+        last_date = datetime.strptime(last_date_str, "%Y-%m-%d").date()
+        today = datetime.now().date()
+        delta = (today - last_date).days
+        
+        if delta == 1:
+            # Active continuous streak
+            new_streak = streak_count + 1
+            cursor.execute("UPDATE users SET streak_count=?, last_streak_date=?, coins=coins+50 WHERE user_id=?", (new_streak, today_str, user_id))
+            db.commit()
+            streak_msg = f"🔥 <b>Daily Streak Maintained!</b> Day {new_streak}! You got +50 Bonus Coins!"
+        elif delta > 1:
+            # Streak broken
+            cursor.execute("UPDATE users SET streak_count=1, last_streak_date=?, coins=coins+50 WHERE user_id=?", (today_str, user_id))
+            db.commit()
+            streak_msg = "💔 <b>Streak Broken!</b> Starting fresh today. You got +50 Bonus Coins!"
+            
+    db.close()
+    return streak_msg
+
+
 def add_xp(user_id, amount=5):
     db = get_db_connection()
     cursor = db.cursor()
-    cursor.execute("SELECT xp, coins FROM users WHERE user_id=?", (user_id,))
+    cursor.execute("SELECT xp FROM users WHERE user_id=?", (user_id,))
     row = cursor.fetchone()
     if not row:
         db.close()
@@ -99,7 +152,6 @@ def add_xp(user_id, amount=5):
     xp = (row[0] or 0) + amount
     level = (xp // 100) + 1
 
-    # Updates both XP, Level, and adds +2 Coins cleanly
     cursor.execute(
         "UPDATE users SET xp=?, level=?, coins = COALESCE(coins, 100) + 2 WHERE user_id=?",
         (xp, level, user_id)
@@ -139,8 +191,8 @@ def register_user(user, context=None):
         if not row:
             invite_code = generate_invite_code()
             cursor.execute("""
-                INSERT INTO users (user_id, username, invite_code, referrals, coins)
-                VALUES (?, ?, ?, 0, 100)
+                INSERT INTO users (user_id, username, invite_code, referrals, coins, streak_count)
+                VALUES (?, ?, ?, 0, 100, 0)
             """, (user.id, user.username, invite_code))
             db.commit()
         elif not row[0]:
@@ -200,6 +252,7 @@ HELP_TEXT = """
 😏 <b>Commands sun lo bhai:</b>
 ━━━━━━━━━━━━━━━━━━━━
 /profile - apni profile dekho 😎
+/leaderboard - top ameer baklolon ki list 🏆
 /start - game shuru karein
 /help - menu check karo
 /about - mere baare me jaano
@@ -473,6 +526,34 @@ async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, parse_mode="HTML")
 
+
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Fetches and displays top 10 richest users based on coins."""
+    db = get_db_connection()
+    cursor = db.cursor()
+    cursor.execute("""
+        SELECT username, coins FROM users 
+        WHERE coins IS NOT NULL 
+        ORDER BY coins DESC LIMIT 10
+    """)
+    rows = cursor.fetchall()
+    db.close()
+
+    if not rows:
+        await update.message.reply_text("Abhi tak leaderboard khali hai bhai! 😲")
+        return
+
+    text = "🏆 <b>TOP BAKLOL LEADERBOARD</b> 🏆\n━━━━━━━━━━━━━━━━━━━━\n"
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    
+    for idx, row in enumerate(rows):
+        username, coins = row
+        display_name = f"@{username}" if username else "Unknown Baklol"
+        text += f"{medals[idx]} {display_name} — <b>{coins} 💰</b>\n"
+        
+    text += "━━━━━━━━━━━━━━━━━━━━\n💬 Chat aur naye features use karke top par aao!"
+    await update.message.reply_text(text, parse_mode="HTML")
+
     
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = get_db_connection()
@@ -481,7 +562,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     cursor.execute("""
-        SELECT username, referrals, badge, premium, xp, level, coins
+        SELECT username, referrals, badge, premium, xp, level, coins, streak_count
         FROM users
         WHERE user_id=?
     """, (user_id,))
@@ -493,7 +574,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.close()
         return
 
-    username, referrals, badge, premium, xp, level, coins = row
+    username, referrals, badge, premium, xp, level, coins, streak_count = row
     
     # Auto Upgrade System for Baklol Badge
     if referrals >= 5 and badge == 'Newbie':
@@ -507,7 +588,8 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username_display = f"@{username}" if username else "User"
 
     text = f"""👤 <b>{username_display}</b>\n
-🏅 <b>Badge :</b> {badge}\n
+🏅 <b>Badge :</b> {badge}
+🔥 <b>Daily Streak :</b> {streak_count or 0} Days\n
 ⭐ <b>Level :</b> {level}
 ✨ <b>XP :</b> {xp}
 💰 <b>Coins :</b> {coins if coins is not None else 100}\n
@@ -558,6 +640,11 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Abe shaant gusse par control rakh thoda! 😭")
         return
 
+    # Trigger daily streak check safely when they interact
+    streak_alert = check_and_update_streak(user_id)
+    if streak_alert:
+        await update.message.reply_text(streak_alert, parse_mode="HTML")
+
     await update.message.chat.send_action(action=ChatAction.TYPING)
     add_xp(user_id)
 
@@ -588,12 +675,13 @@ def main():
     app.add_handler(CommandHandler("game", truth_or_dare))
     app.add_handler(CommandHandler("invite", invite))
     app.add_handler(CommandHandler("profile", profile))
+    app.add_handler(CommandHandler("leaderboard", leaderboard))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
 
     app.add_error_handler(error_handler)
 
-    print("Funny Bot V2 Running...")
+    print("Funny Bot V3 Running...")
     app.run_polling()
 
 
