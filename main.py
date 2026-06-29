@@ -63,7 +63,6 @@ def init_db():
     )
     """)
     
-    # Daily couples tracker table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS daily_couples (
         chat_id INTEGER PRIMARY KEY,
@@ -76,7 +75,6 @@ def init_db():
     """)
     conn.commit()
 
-    # Safe Column upgrades
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN referrals INTEGER DEFAULT 0")
         conn.commit()
@@ -243,9 +241,6 @@ QUIZ_BANK = [
     {"q": "Internet par sabse bada search engine kaun sa hai?\n\nA) Bing\nB) Yahoo\nC) Google\nD) DuckDuckGo", "a": "c"}
 ]
 
-# =========================
-# FUN TEXTS DATA
-# =========================
 MEME_LIST = [
     "Dost: Bhai breakup ho gaya hai, bohot bura lag raha hai.\nMe: Ro mat bhai, chal rank push karte hain! 🎮💀",
     "Gharwale: Humara ladka ek din bada hokar naam roshan karega.\nMe: Subah 4 baje tak reels scroll karte hue... 👁️👄👁️",
@@ -417,15 +412,19 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Valid moods: normal, savage, emotional, flirty")
 
+# FIX HERE: Tracking added for Truth or Dare state
 async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("/game truth ya /game dare likho bhai!")
         return
+    user_id = update.effective_user.id
     choice = context.args[0].lower().strip()
     if choice == "truth":
-        await update.message.reply_text(f"🤔 <b>Sawaal:</b> {random.choice(TRUTH_QUESTIONS)}", parse_mode="HTML")
+        game_sessions[user_id] = {"type": "truth_or_dare"}
+        await update.message.reply_text(f"🤔 <b>Sawaal:</b> {random.choice(TRUTH_QUESTIONS)}\n\n👉 Direct chat me apna sach btao!", parse_mode="HTML")
     elif choice == "dare":
-        await update.message.reply_text(f"🔥 <b>Task:</b> {random.choice(DARE_TASKS)}", parse_mode="HTML")
+        game_sessions[user_id] = {"type": "truth_or_dare"}
+        await update.message.reply_text(f"🔥 <b>Task:</b> {random.choice(DARE_TASKS)}\n\n👉 Task karke direct batayein!", parse_mode="HTML")
 
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = get_db_connection()
@@ -490,7 +489,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_obj = update.effective_chat
     response = (
-        f"👤 <b>{user.first_name}'s Uꜱᴇʀ Iᴅ:</b> <code>{user.id}</code>\n"
+        f"👤 <b>{user.first_name}'s Uꜱᴇʀ I Dz:</b> <code>{user.id}</code>\n"
         f"👥 <b>Gʀᴏᴜᴘ Iᴅ :</b> <code>{chat_obj.id}</code>"
     )
     await update.message.reply_text(response, parse_mode="HTML")
@@ -519,7 +518,7 @@ async def love_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if percentage > 80:
         punchline = "Rab ne bana di jodi! Ekdum perfect match 💖"
     elif percentage > 45:
-        punchline = "Thoda effort maaro, line clear ho sakti hai 😉"
+        punchline = "Thoda effort maaro, line clear ho sakta hai 😉"
     else:
         punchline = "Tumse na ho payega, focus on gaming career 💀"
     await update.message.reply_text(
@@ -674,7 +673,18 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Intercept for Mini-Games Answers
     if user_id in game_sessions:
         session = game_sessions[user_id]
-        if session["type"] == "guess":
+        
+        # FIX HERE: Capturing Truth or Dare responses
+        if session["type"] == "truth_or_dare":
+            db = get_db_connection()
+            db.cursor().execute("UPDATE users SET coins=COALESCE(coins,100)+20 WHERE user_id=?", (user_id,))
+            db.commit()
+            db.close()
+            del game_sessions[user_id]
+            await update.message.reply_text(f"🔥 <b>Wah bhai! Kya khulasa kiya hai!</b>\n\nSach bolne/Task karne ke liye aapko milte hain <b>+20 Coins! 💰</b>", parse_mode="HTML")
+            return
+
+        elif session["type"] == "guess":
             if raw_text.isdigit():
                 guessed = int(raw_text)
                 correct = session["number"]
@@ -744,11 +754,7 @@ def main():
     app.add_handler(CommandHandler("meme", meme_command))
     app.add_handler(CommandHandler("guess", guess_command))
     app.add_handler(CommandHandler("quiz", quiz_command))
-    
-    # 🎮 TRUTH & DARE REGISTRATION DIRECTLY MAINTAINED
     app.add_handler(CommandHandler("game", truth_or_dare))
-    
-    # 🆕 EXTRA NEW ADVANCED CHAT FEATURES
     app.add_handler(CommandHandler("id", id_command))
     app.add_handler(CommandHandler("ludo", ludo_command))
     app.add_handler(CommandHandler("love", love_command))
@@ -758,7 +764,7 @@ def main():
     app.add_handler(CommandHandler("couples", couples_command))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    print("Funny Bot Ultimate V5 All-Inclusive Suite Active...")
+    print("Funny Bot Ultimate Fixed Suite Active...")
     app.run_polling()
 
 if __name__ == "__main__":
