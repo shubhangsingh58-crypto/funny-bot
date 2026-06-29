@@ -58,11 +58,13 @@ def init_db():
         xp INTEGER DEFAULT 0,
         level INTEGER DEFAULT 1,
         streak_count INTEGER DEFAULT 0,
-        last_streak_date TEXT
+        last_streak_date TEXT,
+        last_daily_claim TEXT
     )
     """)
     conn.commit()
 
+    # Column upgrades handled safely
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN referrals INTEGER DEFAULT 0")
         conn.commit()
@@ -84,6 +86,12 @@ def init_db():
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN streak_count INTEGER DEFAULT 0")
         cursor.execute("ALTER TABLE users ADD COLUMN last_streak_date TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN last_daily_claim TEXT")
         conn.commit()
     except sqlite3.OperationalError:
         pass
@@ -257,6 +265,8 @@ HELP_TEXT = """
 /ludo - dice roll karke coins reward pao 🎲
 /love - love percent check karo ❤️
 /kill - chat fun shootout context game 💥
+/daily - daily coins award claim karo 🎁
+/rob - ameer laundo ko reply karke looto 💰
 /start - game shuru karein
 /help - menu check karo
 /about - mere baare me jaano
@@ -443,7 +453,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="HTML")
 
 # =========================
-# EXISTING MINI GAMES
+# MINI GAMES
 # =========================
 async def meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"😂 <b>Baklol Joke:</b>\n\n{random.choice(MEME_LIST)}", parse_mode="HTML")
@@ -488,41 +498,116 @@ async def ludo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-# ==========================================
-# 🆕 NEW ADDED CODES: PHASE 2 (ADDED SAFELY)
-# ==========================================
 async def love_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Calculates fun automated love percentage."""
     percentage = random.randint(0, 100)
-    
     if percentage > 80:
         punchline = "Rab ne bana di jodi! Ekdum perfect match 💖"
     elif percentage > 45:
         punchline = "Thoda effort maaro, line clear ho sakti hai 😉"
     else:
         punchline = "Tumse na ho payega, focus on gaming career 💀"
-        
     await update.message.reply_text(
         f"❤️ <b>Baklol Love Calculator</b> ❤️\n\n✨ Match Rate: <b>{percentage}%</b>\n👉 <i>{punchline}</i>", 
         parse_mode="HTML"
     )
 
 async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Triggers fun fictional chat knockout alert context upon message replies."""
     if not update.message.reply_to_message:
         await update.message.reply_text("❗ Kisi kaleshi bande ke message par reply karke `/kill` likho tabhi maza aayega!")
         return
-        
     instigator = update.effective_user.first_name
     victim = update.message.reply_to_message.from_user.first_name
-    
     kill_scenes = [
         f"⚡ <b>{instigator}</b> ne <b>{victim}</b> ko server lobby me AWM se 360-no scope headshot de maara! 🎮💥",
         f"🦖 <b>{instigator}</b> ne chat room me bhookha dynamic dinosaur chhod diya, jo <b>{victim}</b> ko kacha chaba gaya! 😂",
         f"💣 <b>{instigator}</b> ne gaming bomb feka, <b>{victim}</b> ka system dhuan-dhuan ho gaya! 🤫"
     ]
-    
     await update.message.reply_text(random.choice(kill_scenes), parse_mode="HTML")
+
+
+# ==========================================
+# 🆕 NEW ADDED CODES: PHASE 3 (DAILY & ROB)
+# ==========================================
+async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Claims manual daily bonus coins once every 24 hours."""
+    user_id = update.effective_user.id
+    register_user(update.effective_user)
+    
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    db = get_db_connection()
+    cursor = db.cursor()
+    cursor.execute("SELECT last_daily_claim FROM users WHERE user_id=?", (user_id,))
+    row = cursor.fetchone()
+    
+    if row and row[0] == today_str:
+        db.close()
+        await update.message.reply_text("⏳ <b>Sabar karo bhai!</b> Aap aaj ka daily bonus pehle hi claim kar chuke ho. Kal dobara aana! 👑", parse_mode="HTML")
+        return
+        
+    reward = random.randint(50, 150)
+    cursor.execute("UPDATE users SET coins = COALESCE(coins, 100) + ?, last_daily_claim = ? WHERE user_id = ?", (reward, today_str, user_id))
+    db.commit()
+    db.close()
+    
+    await update.message.reply_text(f"🎁 <b>Daily Bonus Claimed!</b>\n\nAapko mile <b>+{reward} Coins! 💰</b>\nCheck your status via /profile", parse_mode="HTML")
+
+async def rob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Robs coins from another user via message reply context. 50% success risk."""
+    if not update.message.reply_to_message:
+        await update.message.reply_text("❗ Jis ameer bande ko lootna hai, uske message par <b>Reply</b> karke `/rob` likho! 😏", parse_mode="HTML")
+        return
+        
+    robber = update.effective_user
+    victim = update.message.reply_to_message.from_user
+    
+    if robber.id == victim.id:
+        await update.message.reply_text("Abe khud ki hi jeb kaatega kya? 🤣")
+        return
+        
+    if victim.is_bot:
+        await update.message.reply_text("Bot ko lootne chale hain devta! Humare paas khule paise nahi hain 🤖")
+        return
+        
+    register_user(robber)
+    register_user(victim)
+    
+    db = get_db_connection()
+    cursor = db.cursor()
+    
+    # Target safety minimum checks
+    cursor.execute("SELECT coins FROM users WHERE user_id=?", (victim.id,))
+    victim_coins = cursor.fetchone()[0] or 0
+    if victim_coins < 30:
+        db.close()
+        await update.message.reply_text(f"Abe <b>{victim.first_name}</b> bechara pehle se bhikhari hai, iske paas lootne ke liye kuch nahi hai! 💀", parse_mode="HTML")
+        return
+        
+    success = random.choice([True, False])
+    
+    if success:
+        stolen = random.randint(15, min(int(victim_coins * 0.3), 50)) # Max 30% or 50 coins
+        cursor.execute("UPDATE users SET coins = coins - ? WHERE user_id = ?", (stolen, victim.id))
+        cursor.execute("UPDATE users SET coins = coins + ? WHERE user_id = ?", (stolen, robber.id))
+        db.commit()
+        db.close()
+        await update.message.reply_text(f"🕵️‍♂️ <b>Robbery Successful!</b>\n\nAapne chupke se <b>{victim.first_name}</b> ki pocket se <b>{stolen} Coins 💰</b> uda liye! Shhh! 🤫", parse_mode="HTML")
+    else:
+        penalty = 40
+        cursor.execute("UPDATE users SET coins = MAX(0, coins - ?) WHERE user_id = ?", (penalty, robber.id))
+        db.commit()
+        db.close()
+        
+        # Calling chat administrators alert sequence
+        admins = await update.message.chat.get_administrators()
+        admin_tags = " ".join([f"@{admin.user.username}" for admin in admins if admin.user.username])
+        
+        await update.message.reply_text(
+            f"🚨 <b>Robbery FAILED!</b>\n\n<b>{victim.first_name}</b> ne range haath pakad liya! Security bulayi gayi hai.\n"
+            f"Penalty: <b>-{penalty} Coins</b> 📉\n\n📢 <b>Alerting Admins:</b> {admin_tags if admin_tags else 'Staff'}", 
+            parse_mode="HTML"
+        )
+
 
 # =========================
 # MAIN CHAT HANDLER
@@ -614,13 +699,15 @@ def main():
     app.add_handler(CommandHandler("quiz", quiz_command))
     app.add_handler(CommandHandler("id", id_command))
     app.add_handler(CommandHandler("ludo", ludo_command))
-    
-    # NEW HANDLERS REGISTERED VIA ASSIGNED STRATEGY
     app.add_handler(CommandHandler("love", love_command))
     app.add_handler(CommandHandler("kill", kill_command))
     
+    # PHASE 3 REGISTERED ROUTINES
+    app.add_handler(CommandHandler("daily", daily_command))
+    app.add_handler(CommandHandler("rob", rob_command))
+    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    print("Funny Bot Upgraded Smoothly (ID, Ludo, Love, Kill Active)...")
+    print("Funny Bot Updated Smoothly (Daily & Rob Live)...")
     app.run_polling()
 
 if __name__ == "__main__":
