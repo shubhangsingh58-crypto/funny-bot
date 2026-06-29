@@ -376,7 +376,7 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
         "X-Title": "Funny Bot"
     }
     payload = {
-        "model": "meta-llama/llama-3-8b-instruct",  # 👈 FIXED: CORRECT STRING LOGIC FOR OPENROUTER
+        "model": "google/gemini-flash-1.5-8b",  # 👈 FIXED: CORRECT STRING LOGIC FOR OPENROUTER
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message}
