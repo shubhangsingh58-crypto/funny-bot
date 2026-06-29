@@ -241,6 +241,9 @@ QUIZ_BANK = [
     {"q": "Internet par sabse bada search engine kaun sa hai?\n\nA) Bing\nB) Yahoo\nC) Google\nD) DuckDuckGo", "a": "c"}
 ]
 
+# =========================
+# TEXT DATA
+# =========================
 MEME_LIST = [
     "Dost: Bhai breakup ho gaya hai, bohot bura lag raha hai.\nMe: Ro mat bhai, chal rank push karte hain! 🎮💀",
     "Gharwale: Humara ladka ek din bada hokar naam roshan karega.\nMe: Subah 4 baje tak reels scroll karte hue... 👁️👄👁️",
@@ -266,9 +269,6 @@ DARE_TASKS = [
     "Apna koi ajeeb secret btao chat me bina sharmaye! 🔥"
 ]
 
-# =========================
-# HELP & ABOUT TEXTS
-# =========================
 HELP_TEXT = """
 😏 <b>Commands sun lo bhai:</b>
 ━━━━━━━━━━━━━━━━━━━━
@@ -284,6 +284,7 @@ HELP_TEXT = """
 /daily - daily coins award claim karo 🎁
 /rob - ameer laundo ko reply karke looto 💰
 /couples - aaj ka couple of the day dekho 👩‍❤️‍👨
+/melodi - ❤️ Secret Compatibility Report Check karein!
 /start - game shuru karein
 /help - menu check karo
 /about - mere baare me jaano
@@ -418,7 +419,6 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Valid moods: normal, savage, emotional, flirty")
 
-# UPGRADED Loop System for Truth or Dare
 async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("/game truth ya /game dare likho bhai!")
@@ -475,6 +475,19 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="HTML")
 
 # =========================
+# SECRET NEW FEATURE
+# =========================
+async def melodi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    response_text = (
+        "❤️ <b>OFFICIAL #MELODI COMPATIBILITY REPORT</b> ❤️\n\n"
+        "👤 <b>Partners:</b> Narendra Modi 🤝 Giorgia Meloni\n"
+        "📊 **Love Percentage:** 99.9% <i>(100% isliye nahi kyunki beech mein G7 Summit aa gaya 💀)</i>\n\n"
+        "🎵 **Current Vibe:** *Dil Sambhal Ja Zara* (AI Version playing on loop... 🎸)\n\n"
+        "👉 <i>Status: International Relations ekdum tight hain!</i> 🗺️"
+    )
+    await update.message.reply_text(response_text, parse_mode="HTML")
+
+# =========================
 # INTERACTIVE MINI GAMES
 # =========================
 async def meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -497,7 +510,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_obj = update.effective_chat
     response = (
         f"👤 <b>{user.first_name}'s Uꜱᴇʀ Iᴅ:</b> <code>{user.id}</code>\n"
-        f"👥 <b>Gʀᴏᴜᴘ Iᴅ :</b> <code>{chat_obj.id}</code>"
+        f"👥 <b>GʀᴏᴜPF Iᴅ :</b> <code>{chat_obj.id}</code>"
     )
     await update.message.reply_text(response, parse_mode="HTML")
 
@@ -693,7 +706,6 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.commit()
             db.close()
             
-            # Agla continuous random question pick karo bina session delete kiye!
             last_mode = session.get("last_mode", "truth")
             if last_mode == "truth":
                 next_q = random.choice(TRUTH_QUESTIONS)
@@ -789,6 +801,7 @@ def main():
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("rob", rob_command))
     app.add_handler(CommandHandler("couples", couples_command))
+    app.add_handler(CommandHandler("melodi", melodi_command))  # LINKED SECURELY HERE
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     print("Funny Bot Loop Mode Suite Active...")
