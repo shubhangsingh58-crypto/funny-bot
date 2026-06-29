@@ -62,9 +62,21 @@ def init_db():
         last_daily_claim TEXT
     )
     """)
+    
+    # Daily couples tracker table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS daily_couples (
+        chat_id INTEGER PRIMARY KEY,
+        user1_id INTEGER,
+        user1_name TEXT,
+        user2_id INTEGER,
+        user2_name TEXT,
+        selection_date TEXT
+    )
+    """)
     conn.commit()
 
-    # Column upgrades handled safely
+    # Safe Column upgrades
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN referrals INTEGER DEFAULT 0")
         conn.commit()
@@ -231,6 +243,9 @@ QUIZ_BANK = [
     {"q": "Internet par sabse bada search engine kaun sa hai?\n\nA) Bing\nB) Yahoo\nC) Google\nD) DuckDuckGo", "a": "c"}
 ]
 
+# =========================
+# FUN TEXTS DATA
+# =========================
 MEME_LIST = [
     "Dost: Bhai breakup ho gaya hai, bohot bura lag raha hai.\nMe: Ro mat bhai, chal rank push karte hain! 🎮💀",
     "Gharwale: Humara ladka ek din bada hokar naam roshan karega.\nMe: Subah 4 baje tak reels scroll karte hue... 👁️👄👁️",
@@ -251,7 +266,7 @@ DARE_TASKS = [
 ]
 
 # =========================
-# TEXTS
+# HELP & ABOUT TEXTS
 # =========================
 HELP_TEXT = """
 😏 <b>Commands sun lo bhai:</b>
@@ -267,6 +282,7 @@ HELP_TEXT = """
 /kill - chat fun shootout context game 💥
 /daily - daily coins award claim karo 🎁
 /rob - ameer laundo ko reply karke looto 💰
+/couples - aaj ka couple of the day dekho 👩‍❤️‍👨
 /start - game shuru karein
 /help - menu check karo
 /about - mere baare me jaano
@@ -370,7 +386,7 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
         return "Reply dene gaya tha, raste me thoda system latak gaya 😭"
 
 # =========================
-# STANDARD COMMANDS
+# CORE COMMAND HANDLERS
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(update.effective_user, context)
@@ -453,7 +469,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="HTML")
 
 # =========================
-# MINI GAMES
+# INTERACTIVE MINI GAMES
 # =========================
 async def meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"😂 <b>Baklol Joke:</b>\n\n{random.choice(MEME_LIST)}", parse_mode="HTML")
@@ -474,7 +490,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_obj = update.effective_chat
     response = (
-        f"👤 <b>{user.first_name} 夜🌙's Uꜱᴇʀ Iᴅ:</b> <code>{user.id}</code>\n"
+        f"👤 <b>{user.first_name}'s Uꜱᴇʀ Iᴅ:</b> <code>{user.id}</code>\n"
         f"👥 <b>Gʀᴏᴜᴘ Iᴅ :</b> <code>{chat_obj.id}</code>"
     )
     await update.message.reply_text(response, parse_mode="HTML")
@@ -524,15 +540,9 @@ async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text(random.choice(kill_scenes), parse_mode="HTML")
 
-
-# ==========================================
-# 🆕 NEW ADDED CODES: PHASE 3 (DAILY & ROB)
-# ==========================================
 async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Claims manual daily bonus coins once every 24 hours."""
     user_id = update.effective_user.id
     register_user(update.effective_user)
-    
     today_str = datetime.now().strftime("%Y-%m-%d")
     
     db = get_db_connection()
@@ -549,33 +559,25 @@ async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("UPDATE users SET coins = COALESCE(coins, 100) + ?, last_daily_claim = ? WHERE user_id = ?", (reward, today_str, user_id))
     db.commit()
     db.close()
-    
     await update.message.reply_text(f"🎁 <b>Daily Bonus Claimed!</b>\n\nAapko mile <b>+{reward} Coins! 💰</b>\nCheck your status via /profile", parse_mode="HTML")
 
 async def rob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Robs coins from another user via message reply context. 50% success risk."""
     if not update.message.reply_to_message:
         await update.message.reply_text("❗ Jis ameer bande ko lootna hai, uske message par <b>Reply</b> karke `/rob` likho! 😏", parse_mode="HTML")
         return
-        
     robber = update.effective_user
     victim = update.message.reply_to_message.from_user
-    
     if robber.id == victim.id:
         await update.message.reply_text("Abe khud ki hi jeb kaatega kya? 🤣")
         return
-        
     if victim.is_bot:
         await update.message.reply_text("Bot ko lootne chale hain devta! Humare paas khule paise nahi hain 🤖")
         return
         
     register_user(robber)
     register_user(victim)
-    
     db = get_db_connection()
     cursor = db.cursor()
-    
-    # Target safety minimum checks
     cursor.execute("SELECT coins FROM users WHERE user_id=?", (victim.id,))
     victim_coins = cursor.fetchone()[0] or 0
     if victim_coins < 30:
@@ -584,9 +586,8 @@ async def rob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     success = random.choice([True, False])
-    
     if success:
-        stolen = random.randint(15, min(int(victim_coins * 0.3), 50)) # Max 30% or 50 coins
+        stolen = random.randint(15, min(int(victim_coins * 0.3), 50))
         cursor.execute("UPDATE users SET coins = coins - ? WHERE user_id = ?", (stolen, victim.id))
         cursor.execute("UPDATE users SET coins = coins + ? WHERE user_id = ?", (stolen, robber.id))
         db.commit()
@@ -597,17 +598,63 @@ async def rob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute("UPDATE users SET coins = MAX(0, coins - ?) WHERE user_id = ?", (penalty, robber.id))
         db.commit()
         db.close()
-        
-        # Calling chat administrators alert sequence
         admins = await update.message.chat.get_administrators()
         admin_tags = " ".join([f"@{admin.user.username}" for admin in admins if admin.user.username])
-        
         await update.message.reply_text(
             f"🚨 <b>Robbery FAILED!</b>\n\n<b>{victim.first_name}</b> ne range haath pakad liya! Security bulayi gayi hai.\n"
             f"Penalty: <b>-{penalty} Coins</b> 📉\n\n📢 <b>Alerting Admins:</b> {admin_tags if admin_tags else 'Staff'}", 
             parse_mode="HTML"
         )
 
+async def couples_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_obj = update.effective_chat
+    if chat_obj.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        await update.message.reply_text("❌ Yeh kalesh sirf Group Chat me hi ho sakta hai bhai! 😉")
+        return
+        
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    db = get_db_connection()
+    cursor = db.cursor()
+    cursor.execute("SELECT user1_name, user2_name FROM daily_couples WHERE chat_id=? AND selection_date=?", (chat_obj.id, today_str))
+    existing = cursor.fetchone()
+    
+    if existing:
+        db.close()
+        await update.message.reply_text(
+            f"👩‍❤️‍👨 <b>Couple of the Day!</b>\n\n"
+            f"Aaj ke officially certified couple hain:\n"
+            f"💞 <b>{existing[0]}</b>  +  <b>{existing[1]}</b> 💞\n\n"
+            f"👉 <i>Kal `/couples` chala kar naya kalesh dekhein!</i>", parse_mode="HTML"
+        )
+        return
+
+    cursor.execute("SELECT user_id, username FROM users WHERE username IS NOT NULL")
+    pool = cursor.fetchall()
+    db.close()
+    
+    if len(pool) < 2:
+        await update.message.reply_text("❗ Group me kam se kam 2 logo ka bot data par active hona zaroori hai tabhi jodi banegi!")
+        return
+        
+    u1, u2 = random.sample(pool, 2)
+    name1 = f"@{u1[1]}"
+    name2 = f"@{u2[1]}"
+    
+    db = get_db_connection()
+    cursor = db.cursor()
+    cursor.execute("""
+        INSERT OR REPLACE INTO daily_couples (chat_id, user1_id, user1_name, user2_id, user2_name, selection_date)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (chat_obj.id, u1[0], name1, u2[0], name2, today_str))
+    db.commit()
+    db.close()
+    
+    await update.message.reply_text(
+        f"💘 <b>Searching the perfect match in group...</b>\n\n"
+        f"✨ <b>Today's Couple of the Day is:</b>\n"
+        f"👩‍❤️‍👨 <b>{name1}</b>  ❤  <b>{name2}</b> 👩‍❤️‍👨\n\n"
+        f"Badhai ho dono ko! Party kab de rahe ho? 😂🎉", parse_mode="HTML"
+    )
 
 # =========================
 # MAIN CHAT HANDLER
@@ -624,6 +671,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     last_message_time[user_id] = now
 
+    # Intercept for Mini-Games Answers
     if user_id in game_sessions:
         session = game_sessions[user_id]
         if session["type"] == "guess":
@@ -690,24 +738,27 @@ def main():
     app.add_handler(CommandHandler("ping", ping))
     app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(CommandHandler("mode", mode_command))
-    app.add_handler(CommandHandler("game", truth_or_dare))
     app.add_handler(CommandHandler("invite", invite))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(CommandHandler("meme", meme_command))
     app.add_handler(CommandHandler("guess", guess_command))
     app.add_handler(CommandHandler("quiz", quiz_command))
+    
+    # 🎮 TRUTH & DARE REGISTRATION DIRECTLY MAINTAINED
+    app.add_handler(CommandHandler("game", truth_or_dare))
+    
+    # 🆕 EXTRA NEW ADVANCED CHAT FEATURES
     app.add_handler(CommandHandler("id", id_command))
     app.add_handler(CommandHandler("ludo", ludo_command))
     app.add_handler(CommandHandler("love", love_command))
     app.add_handler(CommandHandler("kill", kill_command))
-    
-    # PHASE 3 REGISTERED ROUTINES
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("rob", rob_command))
+    app.add_handler(CommandHandler("couples", couples_command))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    print("Funny Bot Updated Smoothly (Daily & Rob Live)...")
+    print("Funny Bot Ultimate V5 All-Inclusive Suite Active...")
     app.run_polling()
 
 if __name__ == "__main__":
