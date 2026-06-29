@@ -361,7 +361,7 @@ def should_reply_in_group(update: Update, bot_username: str) -> bool:
     return False
 
 # =========================
-# UPDATED AI REPLY FUNCTION (FAST & 100% FREE MODEL)
+# FIXED AI REPLY FUNCTION
 # =========================
 def get_ai_reply(user_id: int, user_message: str) -> str:
     memory_text = format_memory(user_id)
@@ -376,7 +376,7 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
         "X-Title": "Funny Bot"
     }
     payload = {
-        "model": "meta-llama/llama-3-8b-instruct:free",  # 👈 UPDATED TO FREE & INSTANT RESPONSE MODEL
+        "model": "meta-llama/llama-3-8b-instruct",  # 👈 FIXED: CORRECT STRING LOGIC FOR OPENROUTER
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message}
