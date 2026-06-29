@@ -360,6 +360,9 @@ def should_reply_in_group(update: Update, bot_username: str) -> bool:
         return True
     return False
 
+# =========================
+# UPDATED AI REPLY FUNCTION (FAST & 100% FREE MODEL)
+# =========================
 def get_ai_reply(user_id: int, user_message: str) -> str:
     memory_text = format_memory(user_id)
     mode = user_modes[user_id]
@@ -373,7 +376,7 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
         "X-Title": "Funny Bot"
     }
     payload = {
-        "model": "openrouter/auto",
+        "model": "meta-llama/llama-3-8b-instruct:free",  # 👈 UPDATED TO FREE & INSTANT RESPONSE MODEL
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message}
@@ -475,7 +478,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="HTML")
 
 # =========================
-# SECRET NEW FEATURE
+# #MELODI COMPATIBILITY FEATURE
 # =========================
 async def melodi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response_text = (
@@ -694,7 +697,6 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in game_sessions:
         session = game_sessions[user_id]
         
-        # UPGRADED Loop System logic inside chat
         if session["type"] == "truth_or_dare":
             if text_clean in ["stop", "exit", "quit"]:
                 del game_sessions[user_id]
@@ -801,7 +803,7 @@ def main():
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("rob", rob_command))
     app.add_handler(CommandHandler("couples", couples_command))
-    app.add_handler(CommandHandler("melodi", melodi_command))  # LINKED SECURELY HERE
+    app.add_handler(CommandHandler("melodi", melodi_command))  # #MELODI FEATURE TRIGGER
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     print("Funny Bot Loop Mode Suite Active...")
