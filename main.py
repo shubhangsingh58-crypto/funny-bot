@@ -252,12 +252,18 @@ MEME_LIST = [
 TRUTH_QUESTIONS = [
     "Teri life ka sabse bada aur embarassing secret kya hai? 👀",
     "Tu kabhi kisi pe line maarte hue pakda gaya hai? 😂",
-    "Agar tujhe mauka mile toh tu is group mein kisko block karega? 😏"
+    "Agar tujhe mauka mile toh tu is group mein kisko block karega? 😏",
+    "Kya tune kabhi chupke se kisi ka phone check kiya hai? 📱",
+    "Group ke kis member ka sense of humor sabse ganda lagta hai? 😂",
+    "Agar tere paas invisible hone ki power ho, toh sabse pehle kya karega? 🕵️‍♂️"
 ]
 
 DARE_TASKS = [
     "Apni gallery ka sabse purana aur ajeeb photo group mein bhejo abhi ke abhi! 📸",
-    "Apne status par likho 'Main thoda pagal hoon' aur use 15 minute tak mat hatana. 📱"
+    "Apne status par likho 'Main thoda pagal hoon' aur use 15 minute tak mat hatana. 📱",
+    "Apne kisi rishtedar ko message karo 'Mujhe shadi karni hai emergency hai' aur reply ka screenshot bhejo! 💀",
+    "Group ke kisi member ki tareef mein 4 line ki shayari likho abhi! ✍️",
+    "Apna koi ajeeb secret btao chat me bina sharmaye! 🔥"
 ]
 
 # =========================
@@ -283,7 +289,7 @@ HELP_TEXT = """
 /about - mere baare me jaano
 /ping - check kar main zinda hoon ya nahi
 /mode [normal/savage/emotional/flirty] - mood badlo
-/game [truth/dare] - game khelo
+/game [truth/dare] - loop game khelo (stop likh kar rokein)
 /invite - dosto ko bulao aur rewards jeeto 👥
 /reset - purani baatein bhool jao
 ━━━━━━━━━━━━━━━━━━━━
@@ -412,19 +418,20 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Valid moods: normal, savage, emotional, flirty")
 
-# FIX HERE: Tracking added for Truth or Dare state
+# UPGRADED Loop System for Truth or Dare
 async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("/game truth ya /game dare likho bhai!")
         return
     user_id = update.effective_user.id
     choice = context.args[0].lower().strip()
+    
     if choice == "truth":
-        game_sessions[user_id] = {"type": "truth_or_dare"}
-        await update.message.reply_text(f"🤔 <b>Sawaal:</b> {random.choice(TRUTH_QUESTIONS)}\n\n👉 Direct chat me apna sach btao!", parse_mode="HTML")
+        game_sessions[user_id] = {"type": "truth_or_dare", "last_mode": "truth"}
+        await update.message.reply_text(f"🤔 <b>Sawaal:</b> {random.choice(TRUTH_QUESTIONS)}\n\n👉 Direct chat me apna sach btao!\n(Game rokne ke liye 'stop' likhein)", parse_mode="HTML")
     elif choice == "dare":
-        game_sessions[user_id] = {"type": "truth_or_dare"}
-        await update.message.reply_text(f"🔥 <b>Task:</b> {random.choice(DARE_TASKS)}\n\n👉 Task karke direct batayein!", parse_mode="HTML")
+        game_sessions[user_id] = {"type": "truth_or_dare", "last_mode": "dare"}
+        await update.message.reply_text(f"🔥 <b>Task:</b> {random.choice(DARE_TASKS)}\n\n👉 Task karke direct batayein!\n(Game rokne ke liye 'stop' likhein)", parse_mode="HTML")
 
 async def invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = get_db_connection()
@@ -489,7 +496,7 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_obj = update.effective_chat
     response = (
-        f"👤 <b>{user.first_name}'s Uꜱᴇʀ I Dz:</b> <code>{user.id}</code>\n"
+        f"👤 <b>{user.first_name}'s Uꜱᴇʀ Iᴅ:</b> <code>{user.id}</code>\n"
         f"👥 <b>Gʀᴏᴜᴘ Iᴅ :</b> <code>{chat_obj.id}</code>"
     )
     await update.message.reply_text(response, parse_mode="HTML")
@@ -518,7 +525,7 @@ async def love_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if percentage > 80:
         punchline = "Rab ne bana di jodi! Ekdum perfect match 💖"
     elif percentage > 45:
-        punchline = "Thoda effort maaro, line clear ho sakta hai 😉"
+        punchline = "Thoda effort maaro, line clear ho sakti hai 😉"
     else:
         punchline = "Tumse na ho payega, focus on gaming career 💀"
     await update.message.reply_text(
@@ -674,14 +681,34 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in game_sessions:
         session = game_sessions[user_id]
         
-        # FIX HERE: Capturing Truth or Dare responses
+        # UPGRADED Loop System logic inside chat
         if session["type"] == "truth_or_dare":
+            if text_clean in ["stop", "exit", "quit"]:
+                del game_sessions[user_id]
+                await update.message.reply_text("👋 <b>Game Over!</b> Truth and Dare loop closed. Mast maza aaya bhai! 😎", parse_mode="HTML")
+                return
+                
             db = get_db_connection()
             db.cursor().execute("UPDATE users SET coins=COALESCE(coins,100)+20 WHERE user_id=?", (user_id,))
             db.commit()
             db.close()
-            del game_sessions[user_id]
-            await update.message.reply_text(f"🔥 <b>Wah bhai! Kya khulasa kiya hai!</b>\n\nSach bolne/Task karne ke liye aapko milte hain <b>+20 Coins! 💰</b>", parse_mode="HTML")
+            
+            # Agla continuous random question pick karo bina session delete kiye!
+            last_mode = session.get("last_mode", "truth")
+            if last_mode == "truth":
+                next_q = random.choice(TRUTH_QUESTIONS)
+                await update.message.reply_text(
+                    f"🔥 <b>Wah bhai!</b> Jawab ke liye mile <b>+20 Coins! 💰</b>\n\n"
+                    f"🤔 <b>Agla Sawaal (Truth):</b> {next_q}\n\n"
+                    f"👉 Apne answer likho ya game rokne ke liye 'stop' bolo!", parse_mode="HTML"
+                )
+            else:
+                next_d = random.choice(DARE_TASKS)
+                await update.message.reply_text(
+                    f"🔥 <b>Gajab task kiya!</b> Mile <b>+20 Coins! 💰</b>\n\n"
+                    f"⚡ <b>Agla Task (Dare):</b> {next_d}\n\n"
+                    f"👉 Kar ke btao ya game rokne ke liye 'stop' bolo!", parse_mode="HTML"
+                )
             return
 
         elif session["type"] == "guess":
@@ -764,7 +791,7 @@ def main():
     app.add_handler(CommandHandler("couples", couples_command))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    print("Funny Bot Ultimate Fixed Suite Active...")
+    print("Funny Bot Loop Mode Suite Active...")
     app.run_polling()
 
 if __name__ == "__main__":
