@@ -269,6 +269,18 @@ DARE_TASKS = [
     "Apna koi ajeeb secret btao chat me bina sharmaye! 🔥"
 ]
 
+# SPIN THE WHEEL FUNNY OPTIONS
+SPIN_OPTIONS = [
+    {"text": "👑 Aapko milta hai group ka sabse bada <b>Baklol</b> hone ka khitab!", "coins": 10},
+    {"text": "🤫 Bhagwan bachaaye! Agla banda jo msg karega, uski har baat par 'Haan ji malik' bolna padega. 😂", "coins": 0},
+    {"text": "💰 Ekdum Kismat Chamak Gayi! Jackpot laga hai bhaiya.", "coins": 100},
+    {"text": "🤡 Aapka muh band rakhne ke liye sarkar ne 50 coins ka jurmana lagaya hai! 📉", "coins": -50},
+    {"text": "🐒 Aap pichle janam me ek nirlajg bandar the. Saboot ki zaroorat nahi hai!", "coins": 15},
+    {"text": "🎲 Aapko milta hai dobara spin karne ka mauka, par is baar thoda dhang se! 🔄", "coins": 0},
+    {"text": "🥵 Crush ne aapka message dekh kar block maar diya! Shok manao.", "coins": -20},
+    {"text": "🌟 Aap is group ke sabse shareef aur gyaani insaan hain (Pura jhooth hai)! 😏", "coins": 30}
+]
+
 HELP_TEXT = """
 😏 <b>Commands sun lo bhai:</b>
 ━━━━━━━━━━━━━━━━━━━━
@@ -277,6 +289,7 @@ HELP_TEXT = """
 /meme - ek mast instant meme joke suno 😂
 /guess - number guessing game shuru karo 🎮
 /quiz - quiz khel kar coins jeeto 🧠
+/spin - Funny spin the wheel game khelo 🎡🔥
 /id - user aur group ki unique id dekho 🆔
 /ludo - dice roll karke coins reward pao 🎲
 /love - love percent check karo ❤️
@@ -507,6 +520,38 @@ async def quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     quiz = random.choice(QUIZ_BANK)
     game_sessions[user_id] = {"type": "quiz", "answer": quiz["a"]}
     await update.message.reply_text(f"🧠  <b>Instant Baklol Quiz!</b>\n\n{quiz['q']}\n\n👉 Apne answer ke option ka letter (A, B, C, D) direct reply me likho!")
+
+# NEW SPIN THE WHEEL COMMAND
+async def spin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(update.effective_user)
+    
+    # Selecting random option
+    chosen = random.choice(SPIN_OPTIONS)
+    coin_effect = chosen["coins"]
+    
+    db = get_db_connection()
+    cursor = db.cursor()
+    
+    # Updating Coins in DB
+    if coin_effect != 0:
+        if coin_effect > 0:
+            cursor.execute("UPDATE users SET coins = COALESCE(coins, 100) + ? WHERE user_id = ?", (coin_effect, user_id))
+            reward_text = f"\n\n🎁 Aapko mile <b>+{coin_effect} Coins! 💰</b>"
+        else:
+            cursor.execute("UPDATE users SET coins = MAX(0, COALESCE(coins, 100) + ?) WHERE user_id = ?", (coin_effect, user_id))
+            reward_text = f"\n\n🚨 Aapke khate se <b>{abs(coin_effect)} Coins</b> kat gaye! 📉"
+    else:
+        reward_text = "\n\n⚙️ Coins par koi asar nahi pada!"
+        
+    db.commit()
+    db.close()
+    
+    status_msg = await update.message.reply_text("🎡 <b>Spinning the Wheel...</b>\n<i>Kismat ka pahiya ghoom raha hai! 🌀</i>", parse_mode="HTML")
+    time.sleep(1.5)
+    
+    final_text = f"🎡 <b>SPIN THE WHEEL RESULT</b> 🎡\n━━━━━━━━━━━━━━━━━━━━\n👉 {chosen['text']}{reward_text}"
+    await status_msg.edit_text(final_text, parse_mode="HTML")
 
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -768,34 +813,35 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if contains_intro_question(raw_text):
         await update.message.reply_text(INTRO_TEXT)
         return
-    if contains_abuse(raw_text):
-        await update.message.reply_text("Abe shaant gusse par control rakh thoda! 😭")
-        return
 
-    streak_alert = check_and_update_streak(user_id)
-    if streak_alert:
-        await update.message.reply_text(streak_alert, parse_mode="HTML")
+    # Normal OpenRouter AI Response
+    await update.message.chat.send_action(ChatAction.TYPING)
+    ai_response = get_ai_reply(user_id, raw_text)
+    await update.message.reply_text(ai_response)
 
-    await update.message.chat.send_action(action=ChatAction.TYPING)
-    add_xp(user_id)
-    reply = get_ai_reply(user_id, raw_text)
-    await update.message.reply_text(reply)
 
+# =========================
+# APPLICATION BUILDER MAIN
+# =========================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+
+    # Command Registration
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about))
     app.add_handler(CommandHandler("ping", ping))
     app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(CommandHandler("mode", mode_command))
+    app.add_handler(CommandHandler("game", truth_or_dare))
     app.add_handler(CommandHandler("invite", invite))
-    app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("profile", profile))
+    app.add_handler(CommandHandler("melodi", melodi_command))
     app.add_handler(CommandHandler("meme", meme_command))
     app.add_handler(CommandHandler("guess", guess_command))
     app.add_handler(CommandHandler("quiz", quiz_command))
-    app.add_handler(CommandHandler("game", truth_or_dare))
+    app.add_handler(CommandHandler("spin", spin_command))  # 👈 REGISTERED SPIN COMMAND HERE
     app.add_handler(CommandHandler("id", id_command))
     app.add_handler(CommandHandler("ludo", ludo_command))
     app.add_handler(CommandHandler("love", love_command))
@@ -803,10 +849,11 @@ def main():
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("rob", rob_command))
     app.add_handler(CommandHandler("couples", couples_command))
-    app.add_handler(CommandHandler("melodi", melodi_command))  # #MELODI FEATURE TRIGGER
-    
+
+    # Fallback Chat Message Handler
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    print("Funny Bot Loop Mode Suite Active...")
+
+    print("🚀 Baklol Bot V2 Online (With Spin Feature!) Running...")
     app.run_polling()
 
 if __name__ == "__main__":
