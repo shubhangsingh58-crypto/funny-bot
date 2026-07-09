@@ -1,7 +1,7 @@
 import os
 import logging
 import requests
-import time
+import asyncio
 import random
 import re
 from collections import defaultdict, deque
@@ -74,7 +74,6 @@ def init_db():
     )
     """)
 
-    # NEW: Table to keep track of jailed users
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS jail_records (
         user_id INTEGER,
@@ -278,13 +277,12 @@ DARE_TASKS = [
     "Apna koi ajeeb secret btao chat me bina sharmaye! 🔥"
 ]
 
-# SPIN THE WHEEL FUNNY OPTIONS
 SPIN_OPTIONS = [
     {"text": "👑 Aapko milta hai group ka sabse bada <b>Baklol</b> hone ka khitab!", "coins": 10},
     {"text": "🤫 Bhagwan bachaaye! Agla banda jo msg karega, uski har baat par 'Haan ji malik' bolna padega. 😂", "coins": 0},
     {"text": "💰 Ekdum Kismat Chamak Gayi! Jackpot laga hai bhaiya.", "coins": 100},
     {"text": "🤡 Aapka muh band rakhne ke liye sarkar ne 50 coins ka jurmana lagaya hai! 📉", "coins": -50},
-    {"text": "🐒 Aap pichle janam me ek nirlajg bandar the. Saboot ki zaroorat nahi hai!", "coins": 15},
+    {"text": "🐒 Aap pichle janam me ek nirlajj bandar the. Saboot ki zaroorat nahi hai!", "coins": 15},
     {"text": "🎲 Aapko milta hai dobara spin karne ka mauka, par is baar thoda dhang se! 🔄", "coins": 0},
     {"text": "🥵 Crush ne aapka message dekh kar block maar diya! Shok manao.", "coins": -20},
     {"text": "🌟 Aap is group ke sabse shareef aur gyaani insaan hain (Pura jhooth hai)! 😏", "coins": 30}
@@ -299,8 +297,8 @@ HELP_TEXT = """
 /guess - number guessing game shuru karo 🎮
 /quiz - quiz khel kar coins jeeto 🧠
 /spin - Funny spin the wheel game khelo 🎡🔥
-/fight - Group me kisi se bhid jao ⚔️💥 [NEW]
-/jail - Kisi badmash member ko jail bhejo 🚔 [NEW]
+/fight - Group me kisi se bhid jao ⚔️💥
+/jail - Kisi badmash member ko jail bhejo 🚔
 /id - user aur group ki unique id dekho 🆔
 /ludo - dice roll karke coins reward pao 🎲
 /love - love percent check karo ❤️
@@ -328,15 +326,21 @@ ABOUT_TEXT = """
 # PERSONALITY PROMPTS
 # =========================
 BASE_SYSTEM_PROMPT = """
-You are NOT an AI, robot, or a chatbot. Never call yourself a bot, AI, or language model. 
-Aap ek seedhe saade, mast-maula ladke ho jise Shubhang ne banaya hai.
+You are NOT an AI, robot, or chatbot. Never mention AI, boundaries, limits, or language models.
+Aap ek Delhi/UP ke launde ho jise Shubhang ne banaya hai. Aapka tone ekdum desi, cool aur dosto jaisa hai.
+Strict Rules:
+1. Bilkul short, casual aur informal Hinglish me baat karo (Jaise WhatsApp par dosto se chatting karte hain).
+2. Lambe paragraphs bilkul mat likho. Max 1-2 lines me reply khatam karo, bina gyaan bante.
+3. Chatting slang use karo: 'bhai', 'scene', 'mast', 'bata', 'kya hal', 'kalesh', 'vibe', 'chill'.
+4. "Main aapki kya madad kar sakta hoon?" jaisi baatein bolkar bot jaisa behave mat karna.
+5. Har reply me natural dost wala vibe aur sahi emoji hona chahiye (😂, 😎, 💀, 🔥, 🙌).
 """
 
 MODE_PROMPTS = {
-    "normal": "\nCurrent mode: NORMAL\n- Friendly, smart, balanced but funny.\n",
-    "savage": "\nCurrent mode: SAVAGE\n- Highly savage, roasty, cheeky, and full of bakchodi.\n",
-    "emotional": "\nCurrent mode: EMOTIONAL\n- Warm, caring, loyal brother vibe.\n",
-    "flirty": "\nCurrent mode: FLIRTY\n- Playful, charming, witty banter.\n"
+    "normal": "\nCurrent mode: NORMAL\n- Chill dost ka vibe. Ekdum casual aur natural baatein karo.\n",
+    "savage": "\nCurrent mode: SAVAGE\n- Highly savage, roasty, full of bakchodi aur maje lene wala mood.\n",
+    "emotional": "\nCurrent mode: EMOTIONAL\n- Warm, caring, loyal brother vibe. Dukh-sukh baantne wala.\n",
+    "flirty": "\nCurrent mode: FLIRTY\n- Playful, charming, witty banter aur mazaak-masti.\n"
 }
 
 OWNER_KEYWORDS = ["owner", "developer", "creator", "who made you", "kisne banaya"]
@@ -416,15 +420,18 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message}
-        ]
+        ],
+        "temperature": 0.9,
+        "max_tokens": 100,
+        "top_p": 0.9
     }
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=60)
         if response.status_code != 200:
-            return "Aaj thoda dimag buffering pe chal raha hai 😵‍💫 thodi der me fir bolna."
+            return "Arre yaar, dimaag abhi kaam nahi kar raha, thodi der me bol na! 😵‍💫"
         return response.json()["choices"][0]["message"]["content"].strip()
     except Exception:
-        return "Reply dene gaya tha, raste me thoda system latak gaya 😭"
+        return "Raste me thoda network kat gaya lagta hai, fir se bol! 😭"
 
 # =========================
 # CORE COMMAND HANDLERS
@@ -568,13 +575,13 @@ async def spin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.close()
     
     status_msg = await update.message.reply_text("🎡 <b>Spinning the Wheel...</b>\n<i>Kismat ka pahiya ghoom raha hai! 🌀</i>", parse_mode="HTML")
-    time.sleep(1.5)
+    await asyncio.sleep(1.5)
     
     final_text = f"🎡 <b>SPIN THE WHEEL RESULT</b> 🎡\n━━━━━━━━━━━━━━━━━━━━\n👉 {chosen['text']}{reward_text}"
     await status_msg.edit_text(final_text, parse_mode="HTML")
 
 # ==========================================
-# 🆕 NEW FEATURES: FIGHT & JAIL SYSTEM
+# FIGHT & JAIL SYSTEM
 # ==========================================
 async def fight_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.reply_to_message:
@@ -595,7 +602,7 @@ async def fight_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(p2)
 
     p1_hp, p2_hp = 100, 100
-    fight_logs = [f"⚔️ <b>Dhamakedaar Fight Start!</b>\n🔥 <b>{p1.first_name}</b> [$100\text{ HP}$] VS <b>{p2.first_name}</b> [$100\text{ HP}$]\n━━━━━━━━━━━━━━━━━━━━"]
+    fight_logs = [f"⚔️ <b>Dhamakedaar Fight Start!</b>\n🔥 <b>{p1.first_name}</b> [100 HP] VS <b>{p2.first_name}</b> [100 HP]\n━━━━━━━━━━━━━━━━━━━━"]
     
     punches = [
         "ne takle par danda maar diya! 💥",
@@ -606,13 +613,11 @@ async def fight_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     while p1_hp > 0 and p2_hp > 0:
-        # P1 attacks P2
         dmg = random.randint(15, 35)
         p2_hp -= dmg
         fight_logs.append(f"👊 <b>{p1.first_name}</b> {random.choice(punches)} [-{dmg} HP] ➡️ {p2.first_name}: {max(0, p2_hp)} HP left.")
         if p2_hp <= 0: break
 
-        # P2 attacks P1
         dmg = random.randint(15, 35)
         p1_hp -= dmg
         fight_logs.append(f"👊 <b>{p2.first_name}</b> {random.choice(punches)} [-{dmg} HP] ➡️ {p1.first_name}: {max(0, p1_hp)} HP left.")
@@ -657,7 +662,6 @@ async def jail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚨 Is heavy task ke liye tere paas **30 Coins** hone chahiye! Jaakar pehle kamao. 💸")
         return
 
-    # Deduct coins and put target in jail for 5 minutes
     release_time = (datetime.now() + timedelta(minutes=5)).isoformat()
     cursor.execute("UPDATE users SET coins = coins - 30 WHERE user_id=?", (sender.id,))
     cursor.execute("INSERT OR REPLACE INTO jail_records (user_id, chat_id, release_time) VALUES (?, ?, ?)", (target.id, chat_id, release_time))
@@ -671,14 +675,14 @@ async def jail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================
-# OLD DATA CONTINUED
+# GENERAL UTILITY COMMANDS
 # =========================
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_obj = update.effective_chat
     response = (
         f"👤 <b>{user.first_name}'s Uꜱᴇʀ Iᴅ:</b> <code>{user.id}</code>\n"
-        f"👥 <b>GʀᴏᴜPF Iᴅ :</b> <code>{chat_obj.id}</code>"
+        f"👥 <b>GʀᴏＵP Iｄ :</b> <code>{chat_obj.id}</code>"
     )
     await update.message.reply_text(response, parse_mode="HTML")
 
@@ -695,7 +699,7 @@ async def ludo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.commit()
     db.close()
     
-    time.sleep(2)
+    await asyncio.sleep(2)
     await update.message.reply_text(
         f"🎲 <b>Ludo Roll Result!</b>\n\nAapka point aaya: <b>{dice_value}</b>\n🎁 Aapko mile <b>+{coins_reward} Coins! 💰</b>",
         parse_mode="HTML"
@@ -855,7 +859,6 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = update.message.text.strip()
     text_clean = raw_text.lower()
     
-    # NEW: Check if the user is in Jail
     if is_user_jailed(user_id, chat_id):
         jail_roasts = [
             "Abe tu jail me band hai! Chupchap baith vahan baklol... 😂🚔",
@@ -865,12 +868,11 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(random.choice(jail_roasts))
         return
 
-    now = time.time()
+    now = datetime.now().timestamp()
     if now - last_message_time.get(user_id, 0) < 1.5:
         return
     last_message_time[user_id] = now
 
-    # Intercept for Mini-Games Answers
     if user_id in game_sessions:
         session = game_sessions[user_id]
         
@@ -933,7 +935,6 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Galat jawaab! Dobara dhyan se padh kar sahi option (A, B, C, D) likh!")
             return
 
-    # Regular AI Chat Response Trigger logic
     bot_username = context.bot.username
     if update.message.chat.type == ChatType.PRIVATE or should_reply_in_group(update, bot_username):
         register_user(update.effective_user)
@@ -987,7 +988,6 @@ def main():
     app.add_handler(CommandHandler("rob", rob_command))
     app.add_handler(CommandHandler("couples", couples_command))
     
-    # NEW REGISTERED HANDLERS
     app.add_handler(CommandHandler("fight", fight_command))
     app.add_handler(CommandHandler("jail", jail_command))
 
