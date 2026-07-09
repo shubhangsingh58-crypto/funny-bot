@@ -7,7 +7,7 @@ import re
 from collections import defaultdict, deque
 import sqlite3
 import string
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update
 from telegram.constants import ChatAction, ChatType
 from telegram.ext import (
@@ -73,6 +73,16 @@ def init_db():
         selection_date TEXT
     )
     """)
+
+    # NEW: Table to keep track of jailed users
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS jail_records (
+        user_id INTEGER,
+        chat_id INTEGER,
+        release_time TEXT,
+        PRIMARY KEY (user_id, chat_id)
+    )
+    """)
     conn.commit()
 
     try:
@@ -124,16 +134,15 @@ def check_and_update_streak(user_id):
         db.close()
         return None
 
+    return_val = ""
     streak_count, last_date_str = row
     streak_count = streak_count or 0
     today_str = datetime.now().strftime("%Y-%m-%d")
     
-    streak_msg = ""
-    
     if not last_date_str:
         cursor.execute("UPDATE users SET streak_count=1, last_streak_date=?, coins=COALESCE(coins, 100)+50 WHERE user_id=?", (today_str, user_id))
         db.commit()
-        streak_msg = "🔥 <b>Daily Streak Started!</b> You got +50 Bonus Coins!"
+        return_val = "🔥 <b>Daily Streak Started!</b> You got +50 Bonus Coins!"
     else:
         try:
             last_date = datetime.strptime(last_date_str, "%Y-%m-%d").date()
@@ -144,16 +153,16 @@ def check_and_update_streak(user_id):
                 new_streak = streak_count + 1
                 cursor.execute("UPDATE users SET streak_count=?, last_streak_date=?, coins=COALESCE(coins, 100)+50 WHERE user_id=?", (new_streak, today_str, user_id))
                 db.commit()
-                streak_msg = f"🔥 <b>Daily Streak Maintained!</b> Day {new_streak}! You got +50 Bonus Coins!"
+                return_val = f"🔥 <b>Daily Streak Maintained!</b> Day {new_streak}! You got +50 Bonus Coins!"
             elif delta > 1:
                 cursor.execute("UPDATE users SET streak_count=1, last_streak_date=?, coins=COALESCE(coins, 100)+50 WHERE user_id=?", (today_str, user_id))
                 db.commit()
-                streak_msg = "💔 <b>Streak Broken!</b> Starting fresh today. You got +50 Bonus Coins!"
+                return_val = "💔 <b>Streak Broken!</b> Starting fresh today. You got +50 Bonus Coins!"
         except Exception:
             pass
             
     db.close()
-    return streak_msg
+    return return_val
 
 
 def add_xp(user_id, amount=5):
@@ -290,6 +299,8 @@ HELP_TEXT = """
 /guess - number guessing game shuru karo 🎮
 /quiz - quiz khel kar coins jeeto 🧠
 /spin - Funny spin the wheel game khelo 🎡🔥
+/fight - Group me kisi se bhid jao ⚔️💥 [NEW]
+/jail - Kisi badmash member ko jail bhejo 🚔 [NEW]
 /id - user aur group ki unique id dekho 🆔
 /ludo - dice roll karke coins reward pao 🎲
 /love - love percent check karo ❤️
@@ -312,12 +323,6 @@ HELP_TEXT = """
 ABOUT_TEXT = """
 😏 Main koi robotic AI ya bot nahi hoon. Ek seedha saadha ladka hoon jo mast bakchodi karta hai dosto ke sath. Shubhang ne mujhe dimaag diya hai! 😎
 """
-
-INTRO_TEXT = (
-    "Abe bataya toh, main ek seedha saadha ladka hoon! 😎\n"
-    "Random baatein, savage roasting aur games sab on point hai.\n"
-    "Aur haan, mujhe Shubhang ne banaya hai 😏🔥"
-)
 
 # =========================
 # PERSONALITY PROMPTS
@@ -373,6 +378,24 @@ def should_reply_in_group(update: Update, bot_username: str) -> bool:
         return True
     return False
 
+def is_user_jailed(user_id: int, chat_id: int) -> bool:
+    db = get_db_connection()
+    cursor = db.cursor()
+    cursor.execute("SELECT release_time FROM jail_records WHERE user_id=? AND chat_id=?", (user_id, chat_id))
+    row = cursor.fetchone()
+    db.close()
+    if row:
+        release_time = datetime.fromisoformat(row[0])
+        if datetime.now() < release_time:
+            return True
+        else:
+            db2 = get_db_connection()
+            cursor2 = db2.cursor()
+            cursor2.execute("DELETE FROM jail_records WHERE user_id=? AND chat_id=?", (user_id, chat_id))
+            db2.commit()
+            db2.close()
+    return False
+
 # =========================
 # FIXED AI REPLY FUNCTION
 # =========================
@@ -389,7 +412,7 @@ def get_ai_reply(user_id: int, user_message: str) -> str:
         "X-Title": "Funny Bot"
     }
     payload = {
-        "model": "openrouter/auto",  # 👈 FIXED: CORRECT STRING LOGIC FOR OPENROUTER
+        "model": "openrouter/auto",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message}
@@ -521,19 +544,16 @@ async def quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_sessions[user_id] = {"type": "quiz", "answer": quiz["a"]}
     await update.message.reply_text(f"🧠  <b>Instant Baklol Quiz!</b>\n\n{quiz['q']}\n\n👉 Apne answer ke option ka letter (A, B, C, D) direct reply me likho!")
 
-# NEW SPIN THE WHEEL COMMAND
 async def spin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     register_user(update.effective_user)
     
-    # Selecting random option
     chosen = random.choice(SPIN_OPTIONS)
     coin_effect = chosen["coins"]
     
     db = get_db_connection()
     cursor = db.cursor()
     
-    # Updating Coins in DB
     if coin_effect != 0:
         if coin_effect > 0:
             cursor.execute("UPDATE users SET coins = COALESCE(coins, 100) + ? WHERE user_id = ?", (coin_effect, user_id))
@@ -553,6 +573,106 @@ async def spin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     final_text = f"🎡 <b>SPIN THE WHEEL RESULT</b> 🎡\n━━━━━━━━━━━━━━━━━━━━\n👉 {chosen['text']}{reward_text}"
     await status_msg.edit_text(final_text, parse_mode="HTML")
 
+# ==========================================
+# 🆕 NEW FEATURES: FIGHT & JAIL SYSTEM
+# ==========================================
+async def fight_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.reply_to_message:
+        await update.message.reply_text("❗ Kisi member ke msg par <b>Reply</b> karke `/fight` likho tabhi danga shuru hoga! ⚔️", parse_mode="HTML")
+        return
+
+    p1 = update.effective_user
+    p2 = update.message.reply_to_message.from_user
+
+    if p1.id == p2.id:
+        await update.message.reply_text("Abe pagal hai kya? Khud se kaise ladega? 😂")
+        return
+    if p2.is_bot:
+        await update.message.reply_text("Bot se mat bhid bhai, system format maar dega tera! 🤖")
+        return
+
+    register_user(p1)
+    register_user(p2)
+
+    p1_hp, p2_hp = 100, 100
+    fight_logs = [f"⚔️ <b>Dhamakedaar Fight Start!</b>\n🔥 <b>{p1.first_name}</b> [$100\text{ HP}$] VS <b>{p2.first_name}</b> [$100\text{ HP}$]\n━━━━━━━━━━━━━━━━━━━━"]
+    
+    punches = [
+        "ne takle par danda maar diya! 💥",
+        "ne 'Tu janta nahi mera baap kaun hai' bolkar thappad jadh diya! 👋",
+        "ne flying chappal fek kar maari! 🩴",
+        "ne chalte match me dhasu dropkick maar di! 🦘",
+        "ne kohni se seedha chhati par vaar kiya! 🦾"
+    ]
+
+    while p1_hp > 0 and p2_hp > 0:
+        # P1 attacks P2
+        dmg = random.randint(15, 35)
+        p2_hp -= dmg
+        fight_logs.append(f"👊 <b>{p1.first_name}</b> {random.choice(punches)} [-{dmg} HP] ➡️ {p2.first_name}: {max(0, p2_hp)} HP left.")
+        if p2_hp <= 0: break
+
+        # P2 attacks P1
+        dmg = random.randint(15, 35)
+        p1_hp -= dmg
+        fight_logs.append(f"👊 <b>{p2.first_name}</b> {random.choice(punches)} [-{dmg} HP] ➡️ {p1.first_name}: {max(0, p1_hp)} HP left.")
+
+    winner = p1 if p1_hp > 0 else p2
+    loser = p2 if p1_hp > 0 else p1
+
+    db = get_db_connection()
+    cursor = db.cursor()
+    cursor.execute("UPDATE users SET coins = COALESCE(coins, 100) + 50 WHERE user_id=?", (winner.id,))
+    db.commit()
+    db.close()
+
+    fight_logs.append(f"━━━━━━━━━━━━━━━━━━━━\n👑 <b>WINNER: {winner.first_name}!</b>\n🎁 Jeetne ki khushi me mile <b>+50 Coins! 💰</b>\n💀 {loser.first_name} raste me ghayal pada mila.")
+    
+    await update.message.reply_text("\n".join(fight_logs), parse_mode="HTML")
+
+async def jail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.reply_to_message:
+        await update.message.reply_text("❗ Jis gunde ko jail bhejna hai, uske message par <b>Reply</b> karke `/jail` likho! 🚔", parse_mode="HTML")
+        return
+
+    sender = update.effective_user
+    target = update.message.reply_to_message.from_user
+    chat_id = update.effective_chat.id
+
+    if sender.id == target.id:
+        await update.message.reply_text("Khud ko jail me kyu daal raha hai baklol? 🧠")
+        return
+    if target.is_bot:
+        await update.message.reply_text("Bot ko jail me daalega? Poori jail ukhad dega bot! 🤖")
+        return
+
+    db = get_db_connection()
+    cursor = db.cursor()
+    cursor.execute("SELECT coins FROM users WHERE user_id=?", (sender.id,))
+    row = cursor.fetchone()
+    
+    sender_coins = row[0] if row else 0
+    if sender_coins < 30:
+        db.close()
+        await update.message.reply_text("🚨 Is heavy task ke liye tere paas **30 Coins** hone chahiye! Jaakar pehle kamao. 💸")
+        return
+
+    # Deduct coins and put target in jail for 5 minutes
+    release_time = (datetime.now() + timedelta(minutes=5)).isoformat()
+    cursor.execute("UPDATE users SET coins = coins - 30 WHERE user_id=?", (sender.id,))
+    cursor.execute("INSERT OR REPLACE INTO jail_records (user_id, chat_id, release_time) VALUES (?, ?, ?)", (target.id, chat_id, release_time))
+    db.commit()
+    db.close()
+
+    await update.message.reply_text(
+        f"🚔 <b>JAIL ALERT!</b> 🚔\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"🚨 <b>{sender.first_name}</b> ne 30 Coins ghush dekar <b>{target.first_name}</b> ko 5 minute ke liye lockup me daal diya hai! ⛓️\n\n"
+        f"🤫 Ab agar jail se bahar aane se pehle bola, toh iska system hila diya jayega!", parse_mode="HTML"
+    )
+
+# =========================
+# OLD DATA CONTINUED
+# =========================
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat_obj = update.effective_chat
@@ -583,12 +703,12 @@ async def ludo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def love_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     percentage = random.randint(0, 100)
+    punchline = "Tumse na ho payega, focus on gaming career 💀"
     if percentage > 80:
         punchline = "Rab ne bana di jodi! Ekdum perfect match 💖"
     elif percentage > 45:
         punchline = "Thoda effort maaro, line clear ho sakti hai 😉"
-    else:
-        punchline = "Tumse na ho payega, focus on gaming career 💀"
+    
     await update.message.reply_text(
         f"❤️ <b>Baklol Love Calculator</b> ❤️\n\n✨ Match Rate: <b>{percentage}%</b>\n👉 <i>{punchline}</i>", 
         parse_mode="HTML"
@@ -646,7 +766,8 @@ async def rob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = get_db_connection()
     cursor = db.cursor()
     cursor.execute("SELECT coins FROM users WHERE user_id=?", (victim.id,))
-    victim_coins = cursor.fetchone()[0] or 0
+    v_row = cursor.fetchone()
+    victim_coins = v_row[0] if v_row else 0
     if victim_coins < 30:
         db.close()
         await update.message.reply_text(f"Abe <b>{victim.first_name}</b> bechara pehle se bhikhari hai, iske paas lootne ke liye kuch nahi hai! 💀", parse_mode="HTML")
@@ -730,9 +851,20 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
     raw_text = update.message.text.strip()
     text_clean = raw_text.lower()
     
+    # NEW: Check if the user is in Jail
+    if is_user_jailed(user_id, chat_id):
+        jail_roasts = [
+            "Abe tu jail me band hai! Chupchap baith vahan baklol... 😂🚔",
+            "Jail me network kaise mil raha hai re tujhe? Chal chup reh abhi! 🤫⛓️",
+            "Sabar kar le bhai, jail ki saza chal rahi hai teri. Zyada bolna mana hai! 🤡"
+        ]
+        await update.message.reply_text(random.choice(jail_roasts))
+        return
+
     now = time.time()
     if now - last_message_time.get(user_id, 0) < 1.5:
         return
@@ -765,68 +897,73 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 next_d = random.choice(DARE_TASKS)
                 await update.message.reply_text(
                     f"🔥 <b>Gajab task kiya!</b> Mile <b>+20 Coins! 💰</b>\n\n"
-                    f"⚡ <b>Agla Task (Dare):</b> {next_d}\n\n"
-                    f"👉 Kar ke btao ya game rokne ke liye 'stop' bolo!", parse_mode="HTML"
+                    f"🔥 <b>Agla Task (Dare):</b> {next_d}\n\n"
+                    f"👉 Jawab btao ya game rokne ke liye 'stop' bolo!", parse_mode="HTML"
                 )
             return
 
         elif session["type"] == "guess":
-            if raw_text.isdigit():
-                guessed = int(raw_text)
-                correct = session["number"]
-                if guessed == correct:
-                    db = get_db_connection()
-                    db.cursor().execute("UPDATE users SET coins=COALESCE(coins,100)+30 WHERE user_id=?", (user_id,))
-                    db.commit()
-                    db.close()
+            try:
+                guess_val = int(text_clean)
+                secret = session["number"]
+                if guess_val == secret:
                     del game_sessions[user_id]
-                    await update.message.reply_text(f"🎉 <b>Arrebaah Sahi Jawab!</b> Maine {correct} hi socha tha! You won <b>+30 Coins 💰</b>!", parse_mode="HTML")
-                    return
-                else:
-                    del game_sessions[user_id]
-                    await update.message.reply_text(f"❌ <b>Galat Jawab!</b> Maine {correct} socha tha. Dobara /guess karke try kar!")
-                    return
-                    
-        elif session["type"] == "quiz":
-            if text_clean in ["a", "b", "c", "d"]:
-                correct = session["answer"]
-                if text_clean == correct:
                     db = get_db_connection()
                     db.cursor().execute("UPDATE users SET coins=COALESCE(coins,100)+40 WHERE user_id=?", (user_id,))
                     db.commit()
                     db.close()
-                    del game_sessions[user_id]
-                    await update.message.reply_text("🎉 <b>Ekdum Perfect!</b> Sahi option chuna tune. You won <b>+40 Coins 💰</b>!", parse_mode="HTML")
-                    return
+                    await update.message.reply_text(f"🎉 <b>Balle Balle!</b> Ekdum sahi guess kiya bhai. Secret number <b>{secret}</b> tha!\n🎁 Mile <b>+40 Coins! 💰</b>", parse_mode="HTML")
                 else:
-                    del game_sessions[user_id]
-                    await update.message.reply_text(f"❌ <b>Dhat Teri Ki!</b> Galat jawab. Correct answer option '{correct.upper()}' tha. Agli baar dhyan dena!")
-                    return
-
-    if update.effective_chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
-        if not should_reply_in_group(update, context.bot.username):
+                    hint = "Thoda bada number socho 📈" if guess_val < secret else "Thoda chhota number socho 📉"
+                    await update.message.reply_text(f"❌ Galat jawab bhaiya! Hint: {hint}. Dobara guess karo!")
+            except Exception:
+                pass
             return
 
-    if contains_owner_question(raw_text):
-        await update.message.reply_text("Mujhe Shubhang ne banaya hai bhai! 😎🔥")
-        return
-    if contains_intro_question(raw_text):
-        await update.message.reply_text(INTRO_TEXT)
-        return
+        elif session["type"] == "quiz":
+            correct = session["answer"]
+            if text_clean == correct:
+                del game_sessions[user_id]
+                db = get_db_connection()
+                db.cursor().execute("UPDATE users SET coins=COALESCE(coins,100)+30 WHERE user_id=?", (user_id,))
+                db.commit()
+                db.close()
+                await update.message.reply_text("🎉 <b>Sahi Jawab!</b> Kamaal ka dimaag hai tere paas. 🔥\n🎁 Reward: <b>+30 Coins 💰</b>", parse_mode="HTML")
+            else:
+                await update.message.reply_text("❌ Galat jawaab! Dobara dhyan se padh kar sahi option (A, B, C, D) likh!")
+            return
 
-    # Normal OpenRouter AI Response
-    await update.message.chat.send_action(ChatAction.TYPING)
-    ai_response = get_ai_reply(user_id, raw_text)
-    await update.message.reply_text(ai_response)
+    # Regular AI Chat Response Trigger logic
+    bot_username = context.bot.username
+    if update.message.chat.type == ChatType.PRIVATE or should_reply_in_group(update, bot_username):
+        register_user(update.effective_user)
+        
+        if contains_abuse(raw_text):
+            await update.message.reply_text("Abe tameez se baat kar, gaali mat de varna utha ke fenk dunga! 😡👊")
+            return
+            
+        if contains_owner_question(raw_text):
+            await update.message.reply_text("Mujhe mere bade bhai <b>Shubhang</b> ne banaya hai ekdam mehnat karke! 😎🔥", parse_mode="HTML")
+            return
+            
+        if contains_intro_question(raw_text):
+            await update.message.reply_text("Main ek seedha saadha ladka hoon! 😎\nRandom baatein, savage roasting aur games sab on point hai.")
+            return
 
+        await update.message.chat.send_action(ChatAction.TYPING)
+        reply = get_ai_reply(user_id, raw_text)
+        
+        user_memories[user_id].append(f"User: {raw_text}")
+        user_memories[user_id].append(f"You: {reply}")
+        
+        await update.message.reply_text(reply)
 
 # =========================
-# APPLICATION BUILDER MAIN
+# BOT RUNNER
 # =========================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Command Registration
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about))
@@ -841,7 +978,7 @@ def main():
     app.add_handler(CommandHandler("meme", meme_command))
     app.add_handler(CommandHandler("guess", guess_command))
     app.add_handler(CommandHandler("quiz", quiz_command))
-    app.add_handler(CommandHandler("spin", spin_command))  # 👈 REGISTERED SPIN COMMAND HERE
+    app.add_handler(CommandHandler("spin", spin_command))
     app.add_handler(CommandHandler("id", id_command))
     app.add_handler(CommandHandler("ludo", ludo_command))
     app.add_handler(CommandHandler("love", love_command))
@@ -849,11 +986,14 @@ def main():
     app.add_handler(CommandHandler("daily", daily_command))
     app.add_handler(CommandHandler("rob", rob_command))
     app.add_handler(CommandHandler("couples", couples_command))
+    
+    # NEW REGISTERED HANDLERS
+    app.add_handler(CommandHandler("fight", fight_command))
+    app.add_handler(CommandHandler("jail", jail_command))
 
-    # Fallback Chat Message Handler
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
 
-    print("🚀 Baklol Bot V2 Online (With Spin Feature!) Running...")
+    print("🔥 Your Feature-Rich Bot is Online! Deploy now...")
     app.run_polling()
 
 if __name__ == "__main__":
